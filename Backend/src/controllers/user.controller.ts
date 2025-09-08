@@ -3,6 +3,38 @@ import { UserService } from "../services/user.service";
 
 export class UserController {
   /**
+   * Verificar si un email ya existe
+   */
+  static async checkEmailExists(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          message: "Email es requerido",
+        });
+        return;
+      }
+
+      const exists = await UserService.checkEmailExists(email);
+
+      res.json({
+        success: true,
+        exists,
+        message: exists ? "Email ya registrado" : "Email disponible",
+      });
+    } catch (error) {
+      console.error("Error checking email:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error al verificar email",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  /**
    * Registrar un nuevo usuario
    */
   static async register(req: Request, res: Response): Promise<void> {

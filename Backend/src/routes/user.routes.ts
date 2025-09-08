@@ -4,7 +4,8 @@ import { requireAuth, requireAdmin } from "../middleware/auth.middleware";
 
 const router = Router();
 
-// Rutas de autenticación
+// Rutas públicas (sin autenticación)
+router.post("/check-email", UserController.checkEmailExists); // Nueva ruta para validar email
 router.post("/register", UserController.register);
 router.post("/login", UserController.login);
 router.post("/logout", UserController.logout);

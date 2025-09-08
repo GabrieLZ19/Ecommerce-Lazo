@@ -28,6 +28,29 @@ export interface UserProfile extends User {
 
 export class UserService {
   /**
+   * Verificar si un email ya existe
+   */
+  static async checkEmailExists(email: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("email")
+        .eq("email", email)
+        .single();
+
+      if (error && error.code !== "PGRST116") {
+        // PGRST116 = No rows found
+        throw error;
+      }
+
+      return !!data; // Retorna true si encontró el email, false si no
+    } catch (error) {
+      console.error("Error checking email existence:", error);
+      throw new Error("Error al verificar email");
+    }
+  }
+
+  /**
    * Crear un nuevo usuario
    */
   static async createUser(userData: CreateUserData) {

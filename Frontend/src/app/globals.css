@@ -99,4 +99,75 @@
   .badge-outline {
     @apply text-foreground;
   }
+
+  /* Toast animations */
+  .toast-enter {
+    @apply transform translate-x-full opacity-0 scale-95;
+  }
+
+  .toast-enter-active {
+    @apply transform translate-x-0 opacity-100 scale-100 transition-all duration-300 ease-out;
+  }
+
+  .toast-exit {
+    @apply transform translate-x-0 opacity-100 scale-100;
+  }
+
+  .toast-exit-active {
+    @apply transform translate-x-full opacity-0 scale-95 transition-all duration-300 ease-in;
+  }
+
+  /* Custom bounce animation for success toasts */
+  @keyframes bounce-subtle {
+    0%,
+    20%,
+    50%,
+    80%,
+    100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-4px);
+    }
+    60% {
+      transform: translateY(-2px);
+    }
+  }
+
+  .toast-success {
+    animation: bounce-subtle 0.6s ease-in-out;
+  }
+
+  /* Slide-in animation for cart icon */
+  @keyframes slide-cart {
+    0% {
+      transform: translateX(-10px) scale(0.8);
+      opacity: 0;
+    }
+    50% {
+      transform: translateX(2px) scale(1.1);
+    }
+    100% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  .cart-icon-animate {
+    animation: slide-cart 0.5s ease-out;
+  }
+
+  /* Progress bar animation */
+  @keyframes progress-shrink {
+    from {
+      width: 100%;
+    }
+    to {
+      width: 0%;
+    }
+  }
+
+  .progress-animate {
+    animation: progress-shrink linear;
+  }
 }
