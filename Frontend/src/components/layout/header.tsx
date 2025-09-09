@@ -104,7 +104,10 @@ export default function Header() {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/orders" className="flex items-center">
+                      <Link
+                        href="/profile?tab=orders"
+                        className="flex items-center"
+                      >
                         <ShoppingBag className="mr-2 h-4 w-4" />
                         <span>Mis Órdenes</span>
                       </Link>

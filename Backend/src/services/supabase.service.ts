@@ -41,11 +41,12 @@ export class ProductService {
       .select(
         `
         *,
-        categories(*)
+        categories(*),
+        product_variants(*, color:colors(*), size:sizes(*))
       `,
         { count: "exact" }
       )
-      .eq("is_active", true);
+      .eq("active", true);
 
     if (filters?.category) {
       query = query.eq("category_id", filters.category);
@@ -108,10 +109,11 @@ export class ProductService {
       .select(
         `
         *,
-        categories(*)
+        categories(*),
+        product_variants(*, color:colors(*), size:sizes(*))
       `
       )
-      .eq("is_active", true);
+      .eq("active", true);
 
     if (filters?.category) {
       query = query.eq("category_id", filters.category);
@@ -157,11 +159,12 @@ export class ProductService {
       .select(
         `
         *,
-        categories(*)
+        categories(*),
+        product_variants(*, color:colors(*), size:sizes(*))
       `
       )
       .eq("id", id)
-      .eq("is_active", true)
+      .eq("active", true)
       .single();
 
     if (error) {
@@ -180,11 +183,12 @@ export class ProductService {
       .select(
         `
         *,
-        categories(*)
+        categories(*),
+        product_variants(*, color:colors(*), size:sizes(*))
       `
       )
       .eq("sku", slug) // Asumiendo que el slug está en el SKU
-      .eq("is_active", true)
+      .eq("active", true)
       .single();
 
     if (error) {
@@ -234,7 +238,7 @@ export class ProductService {
   static async deleteProduct(id: string) {
     const { error } = await supabaseAdmin
       .from("products")
-      .update({ is_active: false })
+      .update({ active: false })
       .eq("id", id);
 
     if (error) {
@@ -263,7 +267,7 @@ export class ProductService {
         categories(*)
       `
       )
-      .eq("is_active", true)
+      .eq("active", true)
       .eq("category_id", currentProduct.category_id)
       .neq("id", productId)
       .limit(limit);
@@ -311,7 +315,7 @@ export class ProductService {
         categories(*)
       `
       )
-      .eq("is_active", true)
+      .eq("active", true)
       .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
       .limit(limit);
 

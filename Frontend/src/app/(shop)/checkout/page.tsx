@@ -29,10 +29,11 @@ import {
   CheckCircle,
   Loader2,
 } from "lucide-react";
-import { useCartStore } from "@/store/cart-store";
+
 import { useClientCart } from "@/hooks/useClientCart";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/contexts/toast-context";
+import { OrderService } from "@/services/order.service";
 
 interface ShippingAddress {
   firstName: string;
@@ -47,6 +48,7 @@ interface ShippingAddress {
   province: string;
   postalCode: string;
   notes?: string;
+  country?: string;
 }
 
 interface PaymentMethod {
@@ -217,22 +219,41 @@ export default function CheckoutPage() {
   };
 
   const handleSubmit = async () => {
+    if (!user?.id) {
+      showError("Debes iniciar sesión para realizar una compra.");
+      router.push("/login");
+      return;
+    }
     if (!validateForm()) return;
 
     setIsProcessing(true);
 
     try {
-      // Aquí iría la integración con MercadoPago
+      // Crear datos de la orden y dirección
       const orderData = {
         items: items.map((item) => ({
           product_id: item.product.id,
-          variant_id: `${item.product.id}-${item.color.id}-${item.size.id}`,
+          variant_id: item.product_variant_id,
           quantity: item.quantity,
-          price: item.price,
-          color: item.color,
-          size: item.size,
+          unit_price: item.price,
+          color: item.color.name,
+          size: item.size.name,
         })),
-        shipping_address: shippingAddress,
+        shipping_address: {
+          first_name: shippingAddress.firstName,
+          last_name: shippingAddress.lastName,
+          email: shippingAddress.email,
+          phone: shippingAddress.phone,
+          address: shippingAddress.address,
+          address_number: shippingAddress.addressNumber,
+          floor: shippingAddress.floor,
+          apartment: shippingAddress.apartment,
+          city: shippingAddress.city,
+          province: shippingAddress.province,
+          postal_code: shippingAddress.postalCode,
+          country: shippingAddress.country || "Argentina",
+          notes: shippingAddress.notes,
+        },
         payment_method: selectedPaymentMethod,
         totals: {
           subtotal: calculateSubtotal(),
@@ -243,25 +264,36 @@ export default function CheckoutPage() {
         },
       };
 
-      console.log("Order data:", orderData);
-
-      // Simular procesamiento
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Crear la orden y la dirección en Supabase
+      const createdOrder = await OrderService.createOrder(user?.id, orderData);
+      const orderId = createdOrder.id;
 
       if (selectedPaymentMethod === "bank_transfer") {
-        // Para transferencia bancaria, mostrar datos y marcar como pendiente
         showSuccess(
           "Orden creada exitosamente. Te enviaremos los datos bancarios por email."
         );
         clearCart();
-        router.push("/profile?tab=orders");
-      } else {
-        // Para MercadoPago, redirigir a la URL de pago
-        showSuccess("Redirigiendo a MercadoPago...");
-        // Aquí iría la redirección real a MercadoPago
-        // window.location.href = mercadopagoUrl;
+        router.push(
+          `/order-confirmation?order_id=${orderId}&payment_status=pending`
+        );
+        return;
+      }
+
+      showSuccess("Preparando el pago...");
+
+      try {
+        const initPoint = await OrderService.startMercadoPagoPayment(orderId);
         clearCart();
-        router.push("/profile?tab=orders");
+        window.location.href = initPoint;
+      } catch (mpError) {
+        console.error("Error with MercadoPago:", mpError);
+        showError(
+          "Error al procesar el pago. Se creó la orden como pendiente."
+        );
+        clearCart();
+        router.push(
+          `/order-confirmation?order_id=${orderId}&payment_status=pending`
+        );
       }
     } catch (error) {
       console.error("Error processing order:", error);
@@ -593,7 +625,7 @@ export default function CheckoutPage() {
                             {item.product.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {item.color.name} • {item.size.name} • Qty:{" "}
+                            {item.color.name} • {item.size.name} • Cantidad:{" "}
                             {item.quantity}
                           </p>
                         </div>

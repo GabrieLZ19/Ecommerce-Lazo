@@ -1,22 +1,34 @@
-import { supabase } from "../config/supabase.js";
+import { supabase } from "../config/supabase";
 import type { Order, OrderItem, Database } from "../types/database.types";
 
 export interface CreateOrderData {
   user_id: string;
   items: Array<{
     product_id: string;
+    variant_id?: string;
     quantity: number;
-    price: number;
+    price?: number;
+    unit_price?: number;
     size?: string;
     color?: string;
   }>;
   shipping_address: {
-    street: string;
+    address?: string;
+    address_number?: string;
+    street?: string;
     number?: string;
     city: string;
-    state: string;
+    state?: string;
+    province?: string;
     postal_code: string;
-    country: string;
+    country?: string;
+    first_name?: string;
+    last_name?: string;
+    phone?: string;
+    email?: string;
+    notes?: string;
+    floor?: string;
+    apartment?: string;
   };
   billing_address?: {
     street: string;
@@ -58,9 +70,26 @@ export class OrderService {
     orderData: CreateOrderData
   ): Promise<OrderWithDetails> {
     try {
+      // Log de la información recibida desde el frontend
+      console.log(
+        "Datos recibidos para crear orden:",
+        JSON.stringify(orderData, null, 2)
+      );
+
+      // Validar que street (address_line_1) no sea vacío o nulo
+      if (
+        !orderData.shipping_address.address ||
+        orderData.shipping_address.address.trim() === ""
+      ) {
+        throw new Error(
+          "El campo 'address' (address_line_1) de la dirección de envío es obligatorio y no puede estar vacío."
+        );
+      }
+
       // Calcular totales
       const subtotal = orderData.items.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+        (sum, item) =>
+          sum + (item.price ?? item.unit_price ?? 0) * item.quantity,
         0
       );
       const shipping_cost = this.calculateShippingCost(
@@ -68,12 +97,60 @@ export class OrderService {
         subtotal
       );
       const tax_amount = this.calculateTax(subtotal);
-      const total_amount = subtotal + shipping_cost + tax_amount;
+      const total = subtotal + shipping_cost + tax_amount;
+      console.log("[ORDER DEBUG] subtotal:", subtotal);
+      console.log("[ORDER DEBUG] shipping_cost:", shipping_cost);
+      console.log("[ORDER DEBUG] tax_amount:", tax_amount);
+      console.log("[ORDER DEBUG] total:", total);
 
       // Generar número de orden
-      const order_number = await this.generateOrderNumber();
+      const order_number = crypto.randomUUID();
 
-      // Crear la orden
+      // Obtener datos del usuario para nombre y apellido
+      const { data: userData, error: userFetchError } = await supabase
+        .from("users")
+        .select("first_name, last_name")
+        .eq("id", orderData.user_id)
+        .single();
+
+      if (userFetchError || !userData) {
+        throw new Error(
+          `No se pudo obtener el usuario para la dirección de envío.`
+        );
+      }
+
+      // Mapear los datos de dirección a los nombres correctos para la tabla addresses
+      const shippingAddress = {
+        user_id: orderData.user_id,
+        type: "shipping",
+        first_name:
+          orderData.shipping_address.first_name || userData.first_name,
+        last_name: orderData.shipping_address.last_name || userData.last_name,
+        phone: orderData.shipping_address.phone || "",
+        address_line_1: orderData.shipping_address.address,
+        address_line_2: orderData.shipping_address.address_number || "",
+        city: orderData.shipping_address.city,
+        state:
+          orderData.shipping_address.province ||
+          orderData.shipping_address.state,
+        postal_code: orderData.shipping_address.postal_code,
+        country: orderData.shipping_address.country || "AR",
+      };
+
+      // Insertar la dirección y obtener el id
+      const { data: address, error: addressError } = await supabase
+        .from("addresses")
+        .insert(shippingAddress)
+        .select()
+        .single();
+
+      if (addressError) {
+        throw new Error(
+          `Failed to create shipping address: ${addressError.message}`
+        );
+      }
+
+      // Crear la orden con shipping_address_id
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -84,8 +161,8 @@ export class OrderService {
           subtotal,
           shipping_cost,
           tax_amount,
-          total_amount,
-          shipping_address: orderData.shipping_address,
+          total,
+          shipping_address_id: address.id,
           billing_address:
             orderData.billing_address || orderData.shipping_address,
           shipping_method: orderData.shipping_method,
@@ -100,25 +177,55 @@ export class OrderService {
       }
 
       // Crear los items de la orden
-      const orderItems = orderData.items.map((item) => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price: item.price,
-        size: item.size,
-        color: item.color,
-      }));
+      const orderItems = [];
+      for (const item of orderData.items) {
+        let product_variant_id = item.variant_id;
+        // Si no se recibe variant_id, buscar el primer variant disponible en la base
+        if (!product_variant_id) {
+          const { data: variants, error: variantError } = await supabase
+            .from("product_variants")
+            .select("id")
+            .eq("product_id", item.product_id)
+            .limit(1);
+          if (variantError) {
+            console.warn(
+              "No se pudo obtener variantes para el producto",
+              item.product_id,
+              variantError
+            );
+          }
+          if (
+            Array.isArray(variants) &&
+            variants.length > 0 &&
+            variants[0]?.id
+          ) {
+            product_variant_id = variants[0].id;
+          }
+        }
+        const price = item.price ?? item.unit_price ?? 0;
+        const total = price * item.quantity;
+        orderItems.push({
+          order_id: order.id,
+          product_id: item.product_id,
+          product_variant_id,
+          quantity: item.quantity,
+          price,
+          total,
+          size: item.size,
+          color: item.color,
+        });
+      }
 
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
         .insert(orderItems).select(`
-          *,
-          products (
-            name,
-            images,
-            sku
-          )
-        `);
+        *,
+        products (
+          name,
+          images,
+          sku
+        )
+      `);
 
       if (itemsError) {
         throw new Error(`Failed to create order items: ${itemsError.message}`);
@@ -127,7 +234,7 @@ export class OrderService {
       // Obtener información del usuario
       const { data: user, error: userError } = await supabase
         .from("users")
-        .select("name, email, phone")
+        .select("first_name, last_name, email, phone")
         .eq("id", orderData.user_id)
         .single();
 
@@ -168,7 +275,8 @@ export class OrderService {
             )
           ),
           users (
-            name,
+            first_name,
+            last_name,
             email,
             phone
           )
@@ -415,7 +523,7 @@ export class OrderService {
 
       const { data: completedOrders, error: completedError } = await supabase
         .from("orders")
-        .select("total_amount", { count: "exact" })
+        .select("total", { count: "exact" })
         .eq("status", "delivered");
 
       const { data: pendingOrders, error: pendingError } = await supabase
@@ -428,7 +536,7 @@ export class OrderService {
       }
 
       const totalRevenue = (completedOrders || []).reduce(
-        (sum: number, order: any) => sum + order.total_amount,
+        (sum: number, order: any) => sum + order.total,
         0
       );
 
@@ -447,20 +555,8 @@ export class OrderService {
    * Generar número de orden único
    */
   private static async generateOrderNumber(): Promise<string> {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-
-    // Obtener el número secuencial del día
-    const { count } = await supabase
-      .from("orders")
-      .select("id", { count: "exact" })
-      .gte("created_at", `${year}-${month}-${day}T00:00:00.000Z`)
-      .lt("created_at", `${year}-${month}-${day}T23:59:59.999Z`);
-
-    const sequence = String((count || 0) + 1).padStart(3, "0");
-    return `LZ${year}${month}${day}${sequence}`;
+    // Ya no se usa, el número de orden ahora es UUID
+    return crypto.randomUUID();
   }
 
   /**

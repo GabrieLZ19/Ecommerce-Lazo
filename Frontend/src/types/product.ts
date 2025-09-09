@@ -7,6 +7,7 @@ export interface Product {
   original_price?: number;
   category_id?: string;
   category?: Category;
+  categories?: Category;
   brand?: string;
   sku?: string;
   stock: number;
@@ -73,12 +74,15 @@ export interface Category {
 
 export interface ProductFilters {
   category_id?: string;
-  min_price?: number;
-  max_price?: number;
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
   brand?: string;
   is_featured?: boolean;
   search?: string;
-  sort_by?: "price_asc" | "price_desc" | "rating" | "newest" | "popular";
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
   limit?: number;
   offset?: number;
+  sizes?: string[];
 }

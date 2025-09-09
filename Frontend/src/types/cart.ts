@@ -1,6 +1,7 @@
 import { Product, Size, Color } from "./product";
 
 export interface CartItem {
+  product_variant_id: string;
   id: string;
   product: Product;
   size: Size;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ import { ProductService } from "@/services/product.service";
 import { Product, Category, ProductFilters } from "@/types/product";
 
 export default function ProductsPage() {
+  // Debounce para búsqueda y precio
+  const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,29 +33,64 @@ export default function ProductsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const sizes = ["XS", "S", "M", "L", "XL", "XXL"];
 
   // Cargar productos y categorías
   useEffect(() => {
-    loadData();
-  }, [currentPage, sortBy, selectedCategory, priceRange]);
+    if (debounceTimeout.current) {
+      clearTimeout(debounceTimeout.current);
+    }
+    debounceTimeout.current = setTimeout(() => {
+      loadData();
+    }, 500); // 500ms debounce
+  }, [currentPage, sortBy, selectedCategory, priceRange, searchTerm]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Preparar filtros
-      const filters: ProductFilters = {};
+      // Preparar filtros con nombres esperados por el backend
+      const filters: any = {};
 
       if (selectedCategory !== "all") {
-        filters.category_id = selectedCategory;
+        filters.category = selectedCategory;
       }
-
-      filters.min_price = priceRange[0];
-      filters.max_price = priceRange[1];
-      filters.sort_by = getSortValue(sortBy);
+      if (selectedSizes.length > 0) {
+        filters.sizes = selectedSizes;
+      }
+      if (priceRange[0] > 0) {
+        filters.minPrice = priceRange[0];
+      }
+      if (priceRange[1] < 200000) {
+        filters.maxPrice = priceRange[1];
+      }
+      if (searchTerm.trim() !== "") {
+        filters.search = searchTerm.trim();
+      }
+      // Mapear sortBy y sortOrder para el backend
+      let sortByValue = getSortValue(sortBy);
+      let sortOrderValue: "asc" | "desc" = "desc";
+      if (sortByValue === "price_asc") {
+        sortByValue = "price";
+        sortOrderValue = "asc";
+      } else if (sortByValue === "price_desc") {
+        sortByValue = "price";
+        sortOrderValue = "desc";
+      } else if (sortByValue === "name_asc") {
+        sortByValue = "name";
+        sortOrderValue = "asc";
+      } else if (sortByValue === "name_desc") {
+        sortByValue = "name";
+        sortOrderValue = "desc";
+      } else if (sortByValue === "newest") {
+        sortByValue = "created_at";
+        sortOrderValue = "desc";
+      }
+      filters.sortBy = sortByValue;
+      filters.sortOrder = sortOrderValue;
 
       // Cargar productos
       const productsData = await ProductService.getProducts(
@@ -61,12 +99,17 @@ export default function ProductsPage() {
         12
       );
 
-      setProducts(productsData.products);
-      setTotalPages(productsData.totalPages);
+      // Extraer productos de la respuesta y asegurar array
+      const productsArray = Array.isArray(productsData?.data?.products)
+        ? productsData.data.products
+        : [];
+      setProducts(productsArray);
+      setTotalPages(productsData?.data?.totalPages || 1); // Si tienes paginación, ajusta aquí
 
       // Cargar categorías (solo la primera vez)
       if (categories.length === 0) {
         const categoriesData = await ProductService.getCategories();
+
         setCategories(categoriesData);
       }
     } catch (err: any) {
@@ -77,7 +120,7 @@ export default function ProductsPage() {
     }
   };
 
-  const getSortValue = (sortValue: string): ProductFilters["sort_by"] => {
+  const getSortValue = (sortValue: string): ProductFilters["sortBy"] => {
     switch (sortValue) {
       case "price_asc":
         return "price_asc";
@@ -87,6 +130,10 @@ export default function ProductsPage() {
         return "rating";
       case "popular":
         return "popular";
+      case "name_asc":
+        return "name_asc";
+      case "name_desc":
+        return "name_desc";
       default: // newest
         return "newest";
     }
@@ -100,10 +147,19 @@ export default function ProductsPage() {
   };
 
   // Filtrar productos del lado del cliente para talles (simplificado)
-  const filteredProducts = products.filter((product) => {
-    // Para esta versión, no filtramos por talles ya que no tenemos variants
-    return true;
-  });
+
+  // Filtrar por talles si hay seleccionados
+  const filteredProducts = Array.isArray(products)
+    ? products.filter((product) => {
+        if (selectedSizes.length > 0 && product.product_variants) {
+          return product.product_variants.some(
+            (variant) =>
+              variant.size && selectedSizes.includes(variant.size.name)
+          );
+        }
+        return true;
+      })
+    : [];
 
   if (error) {
     return (
@@ -130,6 +186,14 @@ export default function ProductsPage() {
         </div>
 
         <div className="flex items-center space-x-4 mt-4 md:mt-0">
+          {/* Search input */}
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nombre o descripción..."
+            className="border rounded px-3 py-2 text-sm w-64"
+          />
           {/* Sort */}
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-48">
@@ -260,28 +324,32 @@ export default function ProductsPage() {
             </div>
           ) : (
             <>
-              {viewMode === "grid" ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredProducts.map((product) => (
-                    <ProductCard key={product.id} product={product} />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredProducts.map((product) => (
-                    <ProductListItem key={product.id} product={product} />
-                  ))}
-                </div>
-              )}
-
+              {/* Mensaje si no hay productos */}
               {filteredProducts.length === 0 && !loading && (
                 <div className="text-center py-12">
                   <p className="text-lg text-muted-foreground">
                     No se encontraron productos con los filtros seleccionados.
+                    <br />
                   </p>
                 </div>
               )}
-
+              {filteredProducts.length > 0 && (
+                <>
+                  {viewMode === "grid" ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredProducts.map((product) => (
+                        <ProductCard key={product.id} product={product} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {filteredProducts.map((product) => (
+                        <ProductListItem key={product.id} product={product} />
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex justify-center mt-8 space-x-2">
@@ -337,7 +405,7 @@ function ProductCard({ product }: { product: Product }) {
         </div>
         <div className="p-4">
           <p className="text-sm text-muted-foreground mb-1">
-            {product.category?.name || "Producto"}
+            {product.categories?.name || "Producto"}
           </p>
           <h3 className="font-semibold mb-2 group-hover:text-primary transition-colors">
             {product.name}
@@ -397,7 +465,7 @@ function ProductListItem({ product }: { product: Product }) {
           <div className="flex justify-between items-start mb-2">
             <div>
               <p className="text-sm text-muted-foreground">
-                {product.category?.name || "Producto"}
+                {product.categories?.name || "Producto"}
               </p>
               <h3 className="text-lg font-semibold group-hover:text-primary transition-colors">
                 {product.name}

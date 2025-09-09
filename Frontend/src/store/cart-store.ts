@@ -11,6 +11,12 @@ export const useCartStore = create<CartState>()(
       itemsCount: 0,
 
       addItem: (product: Product, size: Size, color: Color, quantity = 1) => {
+        console.log("[CART] addItem called", {
+          product,
+          size,
+          color,
+          quantity,
+        });
         const existingItemIndex = get().items.findIndex(
           (item) =>
             item.product.id === product.id &&
@@ -30,6 +36,33 @@ export const useCartStore = create<CartState>()(
           }));
         } else {
           // Si es un item nuevo, agregarlo
+          // Buscar el product_variant_id correcto
+          let product_variant_id = "";
+          if (product.product_variants && product.product_variants.length > 0) {
+            // Si el usuario seleccionó color/talle, buscar el variant exacto
+            let foundVariant = product.product_variants.find(
+              (v) => v.size_id === size.id && v.color_id === color.id
+            );
+            // Si no hay coincidencia exacta, usar el primer variant disponible
+            if (!foundVariant) {
+              foundVariant = product.product_variants[0];
+            }
+            product_variant_id = foundVariant.id;
+          } else {
+            // Si el producto no tiene variantes, product_variant_id queda vacío
+            console.warn(
+              "[CART] product.product_variants está vacío o undefined",
+              product
+            );
+          }
+          // Si por alguna razón sigue vacío, forzar el primer variant si existe
+          if (
+            !product_variant_id &&
+            product.product_variants &&
+            product.product_variants.length > 0
+          ) {
+            product_variant_id = product.product_variants[0].id;
+          }
           const newItem: CartItem = {
             id: `${product.id}-${size.id}-${color.id}`,
             product,
@@ -37,6 +70,7 @@ export const useCartStore = create<CartState>()(
             color,
             quantity,
             price: product.price,
+            product_variant_id,
           };
 
           const updatedItems = [...get().items, newItem];

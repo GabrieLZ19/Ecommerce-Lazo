@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,9 @@ import {
   EyeOff,
   Loader2,
   Edit,
+  ExternalLink,
 } from "lucide-react";
+import { OrderService, Order as OrderType } from "@/services/order.service";
 
 interface UserProfile {
   first_name: string;
@@ -49,14 +51,6 @@ interface UserProfile {
   state: string | null;
   postal_code: string | null;
   country: string | null;
-}
-
-interface Order {
-  id: string;
-  total: number;
-  status: string;
-  created_at: string;
-  items_count: number;
 }
 
 export default function ProfilePage() {
@@ -76,6 +70,7 @@ function ProfilePageContent() {
     loading: authLoading,
   } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [activeTab, setActiveTab] = useState("profile");
   const [loading, setLoading] = useState(false);
@@ -111,7 +106,7 @@ function ProfilePageContent() {
   });
 
   // Orders state
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderType[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   // Redirect if not authenticated
@@ -120,6 +115,36 @@ function ProfilePageContent() {
       router.push("/login");
     }
   }, [user, authLoading, router]);
+
+  // Handle tab from URL params
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && ["profile", "password", "orders"].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  // Load orders when orders tab is active
+  useEffect(() => {
+    if (activeTab === "orders" && user && !ordersLoading) {
+      loadOrders();
+    }
+  }, [activeTab, user]);
+
+  const loadOrders = async () => {
+    if (!user) return;
+
+    try {
+      setOrdersLoading(true);
+      const userOrders = await OrderService.getOrdersByUser(user.id);
+      setOrders(userOrders);
+    } catch (error) {
+      console.error("Error loading orders:", error);
+      // Los datos mock se cargarán automáticamente desde el servicio
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
 
   // Load user profile data
   useEffect(() => {
@@ -221,31 +246,6 @@ function ProfilePageContent() {
     } catch (err: any) {
       setError("Error al cerrar sesión");
     }
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-    }).format(price);
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-AR");
-  };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: { label: "Pendiente", variant: "secondary" as const },
-      processing: { label: "Procesando", variant: "default" as const },
-      shipped: { label: "Enviado", variant: "default" as const },
-      delivered: { label: "Entregado", variant: "default" as const },
-      cancelled: { label: "Cancelado", variant: "destructive" as const },
-    };
-
-    const config =
-      statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
-    return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
   if (authLoading) {
@@ -686,7 +686,12 @@ function ProfilePageContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {orders.length === 0 ? (
+              {ordersLoading ? (
+                <div className="flex justify-center items-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Cargando órdenes...</span>
+                </div>
+              ) : orders.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                   <p className="text-lg text-muted-foreground mb-2">
@@ -701,27 +706,55 @@ function ProfilePageContent() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {orders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <Package className="h-8 w-8 text-gray-400" />
-                        <div>
-                          <p className="font-medium">Orden #{order.id}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatDate(order.created_at)} • {order.items_count}{" "}
-                            productos
+                  {orders.map((order) => {
+                    const statusInfo = OrderService.getStatusBadge(
+                      order.status,
+                      order.payment_status
+                    );
+                    return (
+                      <div
+                        key={order.id}
+                        className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow cursor-pointer"
+                        onClick={() =>
+                          router.push(
+                            `/order-confirmation?order_id=${order.id}&payment_status=${order.payment_status}`
+                          )
+                        }
+                      >
+                        <div className="flex items-center space-x-4">
+                          <Package className="h-8 w-8 text-gray-400" />
+                          <div>
+                            <p className="font-medium">
+                              Orden #{order.order_number}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {OrderService.formatDate(order.created_at)} •{" "}
+                              {order.items.length} productos
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {order.payment_method === "mercadopago"
+                                ? "MercadoPago"
+                                : "Transferencia Bancaria"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">
+                            {OrderService.formatPrice(order.total)}
                           </p>
+                          <Badge variant={statusInfo.variant} className="mt-1">
+                            {statusInfo.label}
+                          </Badge>
+                          <div className="flex items-center mt-1">
+                            <ExternalLink className="h-3 w-3 mr-1 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">
+                              Ver detalles
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold">{formatPrice(order.total)}</p>
-                        {getStatusBadge(order.status)}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

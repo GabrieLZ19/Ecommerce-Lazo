@@ -1,4 +1,4 @@
-import { supabase } from "../config/supabase.js";
+import { supabase } from "../config/supabase";
 import type { User, Database } from "../types/database.types";
 
 export interface CreateUserData {
@@ -113,7 +113,7 @@ export class UserService {
           *,
           orders (
             id,
-            total_amount,
+            total,
             status
           )
         `
@@ -133,7 +133,7 @@ export class UserService {
       const orders_count = orders.length;
       const total_spent = orders
         .filter((order: any) => order.status === "completed")
-        .reduce((sum: number, order: any) => sum + order.total_amount, 0);
+        .reduce((sum: number, order: any) => sum + order.total, 0);
 
       return {
         ...data,

@@ -55,7 +55,14 @@ export class MercadoPagoService {
     metadata?: Record<string, any>
   ) {
     try {
-      const body = {
+      console.log("[MP] FRONTEND_URL:", config.frontend.url);
+      console.log("[MP] back_urls:", {
+        success: `${config.frontend.url}/checkout/success`,
+        failure: `${config.frontend.url}/checkout/failure`,
+        pending: `${config.frontend.url}/checkout/pending`,
+      });
+      const isProduction = `${config.frontend.url}`.startsWith("https://");
+      const body: any = {
         items: items.map((item) => ({
           ...item,
           currency_id: item.currency_id || "ARS",
@@ -64,11 +71,10 @@ export class MercadoPagoService {
         external_reference: orderId,
         notification_url: `${config.frontend.url}/api/webhooks/mercadopago`,
         back_urls: {
-          success: config.frontend.successUrl,
-          failure: config.frontend.failureUrl,
-          pending: config.frontend.pendingUrl,
+          success: `${config.frontend.url}/checkout/success`,
+          failure: `${config.frontend.url}/checkout/failure`,
+          pending: `${config.frontend.url}/checkout/pending`,
         },
-        auto_return: "approved" as const,
         metadata: {
           order_id: orderId,
           ...metadata,
@@ -78,6 +84,9 @@ export class MercadoPagoService {
         expiration_date_from: new Date().toISOString(),
         expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutos
       };
+      if (isProduction) {
+        body.auto_return = "approved";
+      }
 
       const response = await preference.create({ body });
 

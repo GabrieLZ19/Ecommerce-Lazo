@@ -102,6 +102,7 @@ export interface Database {
           tags: string[];
           is_active: boolean;
           is_featured: boolean;
+          active: boolean;
           weight: number | null;
           dimensions: Json | null;
           created_at: string;
@@ -123,6 +124,7 @@ export interface Database {
           tags?: string[];
           is_active?: boolean;
           is_featured?: boolean;
+          active?: boolean;
           weight?: number | null;
           dimensions?: Json | null;
           created_at?: string;
@@ -144,6 +146,7 @@ export interface Database {
           tags?: string[];
           is_active?: boolean;
           is_featured?: boolean;
+          active?: boolean;
           weight?: number | null;
           dimensions?: Json | null;
           created_at?: string;

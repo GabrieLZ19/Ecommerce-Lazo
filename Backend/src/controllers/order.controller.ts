@@ -373,9 +373,19 @@ export class OrderController {
       }));
 
       // Preparar información del comprador
+      let firstName = "";
+      let lastName = "";
+      if ("first_name" in order.user && "last_name" in order.user) {
+        firstName = (order.user as any).first_name || "";
+        lastName = (order.user as any).last_name || "";
+      } else if (order.user.name) {
+        const nameParts = order.user.name.split(" ");
+        firstName = nameParts[0] || "";
+        lastName = nameParts.slice(1).join(" ") || "";
+      }
       const payer = {
-        name: order.user.name.split(" ")[0] || "",
-        surname: order.user.name.split(" ").slice(1).join(" ") || "",
+        name: firstName,
+        surname: lastName,
         email: order.user.email,
         phone: order.user.phone
           ? {

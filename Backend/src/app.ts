@@ -25,15 +25,16 @@ app.use(
 );
 
 // Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // Límite de 100 requests por ventana de tiempo
-  message: {
-    success: false,
-    message: "Demasiadas solicitudes, intenta nuevamente en 15 minutos",
-  },
-});
-app.use("/api/", limiter);
+// Rate limiting desactivado temporalmente para desarrollo
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutos
+//   max: 100, // Límite de 100 requests por ventana de tiempo
+//   message: {
+//     success: false,
+//     message: "Demasiadas solicitudes, intenta nuevamente en 15 minutos",
+//   },
+// });
+// app.use("/api/", limiter);
 
 // Middlewares de utilidad
 app.use(compression());
