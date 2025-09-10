@@ -6,8 +6,12 @@ import compression from "compression";
 import morgan from "morgan";
 import { config } from "./config/environment";
 import routes from "./routes";
+import { validateConfig } from "./config/environment";
 
 const app = express();
+
+// Validar variables de entorno críticas al iniciar
+validateConfig();
 
 // Middlewares de seguridad
 app.use(helmet());

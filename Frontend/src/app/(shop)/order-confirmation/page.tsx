@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,7 +92,23 @@ export default function OrderConfirmationPage() {
       const orderData = await import("@/services/order.service");
       const realOrder = await orderData.OrderService.getOrderById(orderId!);
       console.log("[ORDER API RESPONSE]", realOrder);
-      setOrder(realOrder as any);
+
+      // Normalizar forma de los datos: algunos endpoints/devs usan `items` y otros `order_items`.
+      const normalized: any = {
+        ...realOrder,
+        // mantener compatibilidad: preferir `order_items`, si no existe usar `items`
+        order_items:
+          (realOrder as any).order_items || (realOrder as any).items || [],
+        // normalizar dirección: preferir billing_address, si no usar shipping_address o billing_address_snapshot
+        billing_address:
+          (realOrder as any).billing_address ||
+          (realOrder as any).shipping_address ||
+          (realOrder as any).billing_address_snapshot ||
+          null,
+      };
+
+      console.log("[ORDER API NORMALIZED]", normalized);
+      setOrder(normalized as any);
     } catch (err) {
       console.error("Error loading order:", err);
       setError("Error al cargar los detalles de la orden");
@@ -100,6 +116,32 @@ export default function OrderConfirmationPage() {
       setLoading(false);
     }
   };
+
+  // Small component kept for local fallbacks but uses SafeImage
+  function ProductThumb({ src, alt }: { src?: string | null; alt?: string }) {
+    const [imgSrc, setImgSrc] = useState<string | undefined>(src || undefined);
+
+    // Simple SVG placeholder data URL (small, no external dependency)
+    const placeholder =
+      "data:image/svg+xml;utf8," +
+      encodeURIComponent(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'><rect width='100%' height='100%' fill='%23f3f4f6'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23999' font-family='Arial, Helvetica, sans-serif' font-size='18'>Imagen no disponible</text></svg>`
+      );
+
+    const handleError = () => {
+      setImgSrc(placeholder);
+    };
+
+    return (
+      <SafeImage
+        src={imgSrc || placeholder}
+        alt={alt || "Producto"}
+        className="object-cover rounded-md"
+        sizes="64px"
+        onError={handleError}
+      />
+    );
+  }
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("es-AR", {
@@ -330,18 +372,14 @@ export default function OrderConfirmationPage() {
                   {(order.order_items || []).map((item) => (
                     <div key={item.id} className="flex items-center space-x-4">
                       <div className="relative w-16 h-16 flex-shrink-0">
-                        <Image
+                        <SafeImage
                           src={
                             item.products?.images?.[0] ||
                             "/images/placeholder.png"
                           }
                           alt={item.products?.name || "Producto"}
-                          fill
                           className="object-cover rounded-md"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src = "/placeholder-product.jpg";
-                          }}
+                          sizes="64px"
                         />
                       </div>
                       <div className="flex-1 min-w-0">

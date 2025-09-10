@@ -33,6 +33,8 @@ export const config = {
       process.env.FRONTEND_URL + "/checkout/pending" ||
       "http://localhost:3000/checkout/pending",
   },
+  // URL pública del backend (para webhooks)
+  apiUrl: process.env.API_URL || `http://localhost:${process.env.PORT || 8000}`,
 
   // Configuración JWT (si usas autenticación personalizada)
   jwt: {

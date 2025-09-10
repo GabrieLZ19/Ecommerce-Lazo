@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -136,13 +136,13 @@ export default function CartPage() {
                   <div className="flex items-start space-x-4">
                     {/* Product Image */}
                     <div className="relative w-24 h-24 flex-shrink-0">
-                      <Image
+                      <SafeImage
                         src={
                           item.product.images[0] || "/placeholder-product.jpg"
                         }
                         alt={item.product.name}
-                        fill
                         className="object-cover rounded-md"
+                        sizes="96px"
                       />
                     </div>
 

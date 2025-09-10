@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -610,14 +610,14 @@ export default function CheckoutPage() {
                         className="flex items-center space-x-3"
                       >
                         <div className="relative w-12 h-12 flex-shrink-0">
-                          <Image
+                          <SafeImage
                             src={
                               item.product.images[0] ||
                               "/placeholder-product.jpg"
                             }
                             alt={item.product.name}
-                            fill
                             className="object-cover rounded-md"
+                            sizes="48px"
                           />
                         </div>
                         <div className="flex-1 min-w-0">

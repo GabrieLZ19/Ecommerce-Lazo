@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { OrderService } from "../services/order.service";
 import { MercadoPagoService } from "../services/mercadopago.service";
+import { config } from "../config/environment";
 import { Order } from "../types/database.types";
 
 interface AuthenticatedRequest extends Request {
@@ -404,11 +405,33 @@ export class OrderController {
         order.id
       );
 
+      // Si el servicio devolvió payment_id, actualizar current_payment_id en la orden
+      if (preference.payment_id) {
+        try {
+          await OrderService.updatePaymentReference(
+            order.id,
+            preference.payment_id
+          );
+        } catch (err) {
+          console.warn(
+            "No se pudo actualizar current_payment_id en la orden:",
+            err
+          );
+        }
+      }
+
+      // Si estamos en desarrollo/no producción, usar sandbox_init_point si está disponible
+      const init_point =
+        config.isProduction === true
+          ? preference.init_point
+          : preference.sandbox_init_point || preference.init_point;
+
       res.json({
         success: true,
         data: {
           preference_id: preference.id,
-          init_point: preference.init_point,
+          init_point,
+          payment_id: preference.payment_id || null,
         },
       });
     } catch (error) {

@@ -12,6 +12,13 @@ export interface CreateOrderData {
     size?: string;
     color?: string;
   }>;
+  totals?: {
+    subtotal?: number;
+    shipping?: number;
+    tax?: number;
+    payment_fee?: number;
+    total?: number;
+  };
   shipping_address: {
     address?: string;
     address_number?: string;
@@ -86,18 +93,55 @@ export class OrderService {
         );
       }
 
-      // Calcular totales
-      const subtotal = orderData.items.reduce(
+      // Calcular totales desde los items
+      const computedSubtotal = orderData.items.reduce(
         (sum, item) =>
           sum + (item.price ?? item.unit_price ?? 0) * item.quantity,
         0
       );
-      const shipping_cost = this.calculateShippingCost(
+
+      // Cálculo del shipping server-side
+      const computedShipping = this.calculateShippingCost(
         orderData.shipping_method,
-        subtotal
+        computedSubtotal
       );
-      const tax_amount = this.calculateTax(subtotal);
-      const total = subtotal + shipping_cost + tax_amount;
+
+      // Si el frontend envía totals, preferimos su shipping pero validamos
+      let shipping_cost = computedShipping;
+      if (orderData.totals && typeof orderData.totals.shipping === "number") {
+        shipping_cost = orderData.totals.shipping;
+        if (shipping_cost !== computedShipping) {
+          console.warn(
+            `[ORDER WARNING] shipping provided by frontend (${shipping_cost}) differs from server calculation (${computedShipping}). Using frontend value but verify.`
+          );
+        }
+      }
+
+      // Tax: preferimos valor calculado por servidor si no viene
+      const computedTax = this.calculateTax(computedSubtotal);
+      let tax_amount = computedTax;
+      if (orderData.totals && typeof orderData.totals.tax === "number") {
+        tax_amount = orderData.totals.tax;
+        if (Math.abs(tax_amount - computedTax) > 0.5) {
+          console.warn(
+            `[ORDER WARNING] tax provided by frontend (${tax_amount}) differs from server calculation (${computedTax}). Using frontend value.`
+          );
+        }
+      }
+
+      // Total: prefer frontend total if provided, otherwise calcular
+      let total = computedSubtotal + shipping_cost + tax_amount;
+      if (orderData.totals && typeof orderData.totals.total === "number") {
+        const frontendTotal = orderData.totals.total;
+        if (Math.abs(frontendTotal - total) > 1) {
+          console.warn(
+            `[ORDER WARNING] total provided by frontend (${frontendTotal}) differs from server calculation (${total}). Using frontend total.`
+          );
+        }
+        total = frontendTotal;
+      }
+
+      const subtotal = computedSubtotal;
       console.log("[ORDER DEBUG] subtotal:", subtotal);
       console.log("[ORDER DEBUG] shipping_cost:", shipping_cost);
       console.log("[ORDER DEBUG] tax_amount:", tax_amount);
@@ -163,7 +207,7 @@ export class OrderService {
           tax_amount,
           total,
           shipping_address_id: address.id,
-          billing_address:
+          billing_address_snapshot:
             orderData.billing_address || orderData.shipping_address,
           shipping_method: orderData.shipping_method,
           payment_method: orderData.payment_method,
@@ -177,10 +221,15 @@ export class OrderService {
       }
 
       // Crear los items de la orden
-      const orderItems = [];
+      const orderItems: any[] = [];
       for (const item of orderData.items) {
-        let product_variant_id = item.variant_id;
-        // Si no se recibe variant_id, buscar el primer variant disponible en la base
+        // Normalizar variant_id: tratar cadena vacía como NULL
+        let product_variant_id =
+          item.variant_id && item.variant_id.trim() !== ""
+            ? item.variant_id
+            : null;
+
+        // Si no se recibe variant_id, intentar obtener la primera variante disponible
         if (!product_variant_id) {
           const { data: variants, error: variantError } = await supabase
             .from("product_variants")
@@ -202,12 +251,14 @@ export class OrderService {
             product_variant_id = variants[0].id;
           }
         }
+
         const price = item.price ?? item.unit_price ?? 0;
         const total = price * item.quantity;
         orderItems.push({
           order_id: order.id,
           product_id: item.product_id,
-          product_variant_id,
+          // asegurar NULL en vez de cadena vacía para campos UUID
+          product_variant_id: product_variant_id || null,
           quantity: item.quantity,
           price,
           total,
@@ -292,11 +343,34 @@ export class OrderService {
         throw new Error(`Database error: ${error.message}`);
       }
 
+      if (!data) return null;
+
+      // Obtener shipping_address si existe shipping_address_id
+      let shipping_address = null;
+      try {
+        if (data.shipping_address_id) {
+          const { data: addr, error: addrErr } = await supabase
+            .from("addresses")
+            .select("*")
+            .eq("id", data.shipping_address_id)
+            .single();
+          if (!addrErr) shipping_address = addr;
+        }
+      } catch (addrErr) {
+        console.warn("Could not fetch shipping address:", addrErr);
+      }
+
+      // Desestructurar para evitar devolver duplicados (order_items, users)
+      const { order_items, users, ...rest } = data as any;
+
       return {
-        ...data,
-        items: data.order_items || [],
-        user: data.users,
-        total_items: (data.order_items || []).reduce(
+        ...rest,
+        items: order_items || [],
+        user: users,
+        shipping_address,
+        // exponer `tax` para compatibilidad con frontend (valor real en tax_amount)
+        tax: (rest as any).tax_amount ?? (rest as any).tax ?? 0,
+        total_items: (order_items || []).reduce(
           (sum: number, item: any) => sum + item.quantity,
           0
         ),
@@ -341,14 +415,42 @@ export class OrderService {
         throw new Error(`Database error: ${error.message}`);
       }
 
-      const orders = (data || []).map((order: any) => ({
-        ...order,
-        items: order.order_items || [],
-        total_items: (order.order_items || []).reduce(
-          (sum: number, item: any) => sum + item.quantity,
-          0
-        ),
-      }));
+      // Mapear y enriquecer órdenes: eliminar duplicados y adjuntar shipping_address
+      const orders = await Promise.all(
+        (data || []).map(async (order: any) => {
+          const { order_items, users, shipping_address_id, ...rest } = order;
+
+          let shipping_address = null;
+          try {
+            if (shipping_address_id) {
+              const { data: addr, error: addrErr } = await supabase
+                .from("addresses")
+                .select("*")
+                .eq("id", shipping_address_id)
+                .single();
+              if (!addrErr) shipping_address = addr;
+            }
+          } catch (addrErr) {
+            console.warn(
+              "Could not fetch shipping address for order",
+              order.id,
+              addrErr
+            );
+          }
+
+          return {
+            ...rest,
+            items: order_items || [],
+            user: users,
+            shipping_address,
+            tax: (rest as any).tax_amount ?? (rest as any).tax ?? 0,
+            total_items: (order_items || []).reduce(
+              (sum: number, item: any) => sum + item.quantity,
+              0
+            ),
+          };
+        })
+      );
 
       return {
         orders,
@@ -400,7 +502,7 @@ export class OrderService {
         .from("orders")
         .update({
           payment_status: paymentStatus,
-          payment_id: paymentId,
+          current_payment_id: paymentId,
           updated_at: new Date().toISOString(),
         })
         .eq("id", orderId)
@@ -414,6 +516,31 @@ export class OrderService {
       return data;
     } catch (error) {
       throw new Error(`Failed to update payment status: ${error}`);
+    }
+  }
+
+  /**
+   * Actualizar la referencia al payment actual en la orden (current_payment_id)
+   */
+  static async updatePaymentReference(orderId: string, paymentId: string) {
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .update({
+          current_payment_id: paymentId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Database error: ${error.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to update payment reference: ${error}`);
     }
   }
 
@@ -490,15 +617,42 @@ export class OrderService {
         throw new Error(`Database error: ${error.message}`);
       }
 
-      const orders = (data || []).map((order: any) => ({
-        ...order,
-        items: order.order_items || [],
-        user: order.users,
-        total_items: (order.order_items || []).reduce(
-          (sum: number, item: any) => sum + item.quantity,
-          0
-        ),
-      }));
+      // Mapear y enriquecer órdenes (similar a getUserOrders)
+      const orders = await Promise.all(
+        (data || []).map(async (order: any) => {
+          const { order_items, users, shipping_address_id, ...rest } = order;
+
+          let shipping_address = null;
+          try {
+            if (shipping_address_id) {
+              const { data: addr, error: addrErr } = await supabase
+                .from("addresses")
+                .select("*")
+                .eq("id", shipping_address_id)
+                .single();
+              if (!addrErr) shipping_address = addr;
+            }
+          } catch (addrErr) {
+            console.warn(
+              "Could not fetch shipping address for order",
+              order.id,
+              addrErr
+            );
+          }
+
+          return {
+            ...rest,
+            items: order_items || [],
+            user: users,
+            shipping_address,
+              tax: (rest as any).tax_amount ?? (rest as any).tax ?? 0,
+              total_items: (order_items || []).reduce(
+                (sum: number, item: any) => sum + item.quantity,
+                0
+              ),
+          };
+        })
+      );
 
       return {
         orders,

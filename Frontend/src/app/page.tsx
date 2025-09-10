@@ -1,5 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import { Button } from "@/components/ui/button";
 import { ShoppingBag, ArrowRight, Star } from "lucide-react";
 
@@ -53,14 +53,10 @@ export default function HomePage() {
       <section className="relative h-[70vh] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-black/50 to-transparent z-10" />
         <div className="absolute inset-0">
-          <Image
+          <SafeImage
             src="/images/hero-banner.jpg"
             alt="Nueva Colección"
-            fill
             className="object-cover"
-            priority
-            placeholder="blur"
-            blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaH9bcfaSXWGaRmknyLiHN6v0/g=="
           />
         </div>
         <div className="relative z-20 text-center text-white max-w-4xl px-4">
@@ -100,10 +96,9 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <Link href="/products?category=women" className="group">
               <div className="relative h-64 rounded-lg overflow-hidden">
-                <Image
+                <SafeImage
                   src="/images/categories/women.jpg"
                   alt="Ropa de Mujer"
-                  fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
@@ -116,10 +111,9 @@ export default function HomePage() {
 
             <Link href="/products?category=men" className="group">
               <div className="relative h-64 rounded-lg overflow-hidden">
-                <Image
+                <SafeImage
                   src="/images/categories/men.jpg"
                   alt="Ropa de Hombre"
-                  fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
@@ -132,10 +126,9 @@ export default function HomePage() {
 
             <Link href="/products?category=accessories" className="group">
               <div className="relative h-64 rounded-lg overflow-hidden">
-                <Image
+                <SafeImage
                   src="/images/categories/accessories.jpg"
                   alt="Accesorios"
-                  fill
                   className="object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
@@ -171,10 +164,9 @@ export default function HomePage() {
               >
                 <div className="card-product">
                   <div className="relative aspect-[3/4] overflow-hidden">
-                    <Image
+                    <SafeImage
                       src={product.image}
                       alt={product.name}
-                      fill
                       className="object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                   </div>

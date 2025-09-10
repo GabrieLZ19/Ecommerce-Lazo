@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -288,12 +288,11 @@ export default function ProductDetailPage() {
           <div className="relative aspect-square overflow-hidden rounded-lg bg-gray-100">
             {product.images && product.images.length > 0 ? (
               <>
-                <Image
+                <SafeImage
                   src={product.images[selectedImageIndex]}
                   alt={product.name}
-                  fill
                   className="object-cover"
-                  priority
+                  priority={true}
                 />
 
                 {/* Controles de navegación */}
@@ -350,10 +349,9 @@ export default function ProductDetailPage() {
                       : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
-                  <Image
+                  <SafeImage
                     src={image}
                     alt={`${product.name} ${index + 1}`}
-                    fill
                     className="object-cover"
                   />
                 </button>

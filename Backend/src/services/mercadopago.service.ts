@@ -1,5 +1,6 @@
 import { MercadoPagoConfig, Preference, Payment } from "mercadopago";
 import { config } from "../config/environment";
+import { supabase } from "../config/supabase";
 
 // Configurar MercadoPago
 const client = new MercadoPagoConfig({
@@ -69,7 +70,8 @@ export class MercadoPagoService {
         })),
         payer,
         external_reference: orderId,
-        notification_url: `${config.frontend.url}/api/webhooks/mercadopago`,
+        // notification_url should point to backend webhook endpoint
+        notification_url: `${config.apiUrl}/api/orders/webhook/mercadopago`,
         back_urls: {
           success: `${config.frontend.url}/checkout/success`,
           failure: `${config.frontend.url}/checkout/failure`,
@@ -90,18 +92,60 @@ export class MercadoPagoService {
 
       const response = await preference.create({ body });
 
-      return {
-        id: response.id,
-        init_point: response.init_point,
-        sandbox_init_point: response.sandbox_init_point,
-        client_id: response.client_id,
-        collector_id: response.collector_id,
-        operation_type: response.operation_type,
-        items: response.items,
-        payer: response.payer,
-        back_urls: response.back_urls,
-        external_reference: response.external_reference,
-      };
+      // Crear un registro en la tabla payments para trazabilidad
+      try {
+        const amount = (items || []).reduce(
+          (sum: number, it) => sum + (it.unit_price || 0) * (it.quantity || 1),
+          0
+        );
+
+        const { data: paymentData, error: paymentError } = await supabase
+          .from("payments")
+          .insert({
+            order_id: orderId,
+            provider: "mercadopago",
+            provider_preference_id: response.id,
+            amount: amount || 0,
+            currency: "ARS",
+            status: "pending",
+            raw_response: response,
+          })
+          .select()
+          .single();
+
+        if (paymentError) {
+          console.warn("No se pudo insertar payment record:", paymentError);
+        }
+
+        return {
+          id: response.id,
+          init_point: response.init_point,
+          sandbox_init_point: response.sandbox_init_point,
+          client_id: response.client_id,
+          collector_id: response.collector_id,
+          operation_type: response.operation_type,
+          items: response.items,
+          payer: response.payer,
+          back_urls: response.back_urls,
+          external_reference: response.external_reference,
+          payment_id: paymentData?.id || null,
+        };
+      } catch (dbErr) {
+        console.warn("Error creating payment record:", dbErr);
+        return {
+          id: response.id,
+          init_point: response.init_point,
+          sandbox_init_point: response.sandbox_init_point,
+          client_id: response.client_id,
+          collector_id: response.collector_id,
+          operation_type: response.operation_type,
+          items: response.items,
+          payer: response.payer,
+          back_urls: response.back_urls,
+          external_reference: response.external_reference,
+          payment_id: null,
+        };
+      }
     } catch (error) {
       console.error("Error creating MercadoPago preference:", error);
       throw new Error(`Failed to create payment preference: ${error}`);

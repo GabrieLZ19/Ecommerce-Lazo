@@ -66,6 +66,7 @@ export interface CreateOrderRequest {
     size: string;
   }>;
   shipping_address: Omit<ShippingAddress, "id" | "order_id">;
+  shipping_method?: "standard" | "express" | "overnight";
   payment_method: string;
   totals: {
     subtotal: number;
@@ -87,18 +88,19 @@ export class OrderService {
     const session = await supabase.auth.getSession();
     const token = session?.data?.session?.access_token;
 
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/orders/${orderId}/payment`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        credentials: "include",
-        body: JSON.stringify({ orderId }),
-      }
-    );
+    const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+    const baseApi = apiBase.endsWith("/api") ? apiBase : `${apiBase}/api`;
+    const paymentUrl = `${baseApi}/orders/${orderId}/payment`;
+
+    const response = await fetch(paymentUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ orderId }),
+    });
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -120,14 +122,23 @@ export class OrderService {
     const session = await supabase.auth.getSession();
     const token = session?.data?.session?.access_token;
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/orders`, {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+    const baseApi = apiBase.endsWith("/api") ? apiBase : `${apiBase}/api`;
+    const ordersUrl = `${baseApi}/orders`;
+
+    const payload = {
+      ...orderData,
+      shipping_method: orderData.shipping_method || "standard",
+    } as CreateOrderRequest;
+
+    const response = await fetch(ordersUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",
-      body: JSON.stringify(orderData),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -167,6 +178,26 @@ export class OrderService {
       }
 
       const result = await response.json();
+      // Debug logs: mostrar la respuesta completa del backend y las direcciones de envío
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[OrderService] getOrdersByUser response:", result);
+        if (result?.data?.orders && Array.isArray(result.data.orders)) {
+          result.data.orders.forEach((o: any) => {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[OrderService] order ${o.id} shipping_address:`,
+              o.shipping_address || o.shipping_address_id || null
+            );
+          });
+        } else {
+          // eslint-disable-next-line no-console
+          console.log("[OrderService] no orders found in response", result);
+        }
+      } catch (logErr) {
+        // eslint-disable-next-line no-console
+        console.warn("[OrderService] error logging orders response", logErr);
+      }
       // El backend retorna { success, data }
       return result.data;
     } catch (error) {

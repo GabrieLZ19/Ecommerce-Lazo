@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRef } from "react";
-import Image from "next/image";
+import SafeImage from "@/components/ui/SafeImage";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -391,10 +391,9 @@ function ProductCard({ product }: { product: Product }) {
     <Link href={`/products/${product.id}`} className="group">
       <div className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
         <div className="relative aspect-[3/4] overflow-hidden">
-          <Image
+          <SafeImage
             src={mainImage}
             alt={product.name}
-            fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
           />
           {product.featured && (
@@ -454,10 +453,9 @@ function ProductListItem({ product }: { product: Product }) {
     <Link href={`/products/${product.id}`} className="group">
       <div className="flex border rounded-lg p-4 hover:shadow-md transition-shadow">
         <div className="relative w-32 h-40 mr-4">
-          <Image
+          <SafeImage
             src={mainImage}
             alt={product.name}
-            fill
             className="object-cover rounded"
           />
         </div>
