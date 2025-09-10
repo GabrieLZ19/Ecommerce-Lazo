@@ -645,11 +645,11 @@ export class OrderService {
             items: order_items || [],
             user: users,
             shipping_address,
-              tax: (rest as any).tax_amount ?? (rest as any).tax ?? 0,
-              total_items: (order_items || []).reduce(
-                (sum: number, item: any) => sum + item.quantity,
-                0
-              ),
+            tax: (rest as any).tax_amount ?? (rest as any).tax ?? 0,
+            total_items: (order_items || []).reduce(
+              (sum: number, item: any) => sum + item.quantity,
+              0
+            ),
           };
         })
       );
