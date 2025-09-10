@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <rect width="100%" height="100%" fill="#ecfeff"/>
+  <g transform="translate(120,120)">
+    <rect x="0" y="0" width="560" height="560" rx="24" fill="#ffffff" stroke="#99f6e4" stroke-width="2"/>
+    <g transform="translate(40,40)">
+      <rect width="360" height="280" rx="16" fill="#bbf7d0"/>
+      <rect y="380" width="420" height="32" rx="6" fill="#a7f3d0"/>
+      <text x="240" y="150" font-family="Arial, Helvetica, sans-serif" font-size="36" fill="#064e3b" text-anchor="middle">Producto 4</text>
+    </g>
+  </g>
+</svg>

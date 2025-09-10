@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <rect width="100%" height="100%" fill="#f3f4f6"/>
+  <g transform="translate(120,120)">
+    <rect x="0" y="0" width="560" height="560" rx="24" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+    <g transform="translate(40,40)">
+      <rect width="480" height="320" rx="12" fill="#dbeafe"/>
+      <rect y="360" width="320" height="32" rx="6" fill="#e5e7eb"/>
+      <rect y="404" width="420" height="28" rx="6" fill="#eef2ff"/>
+      <text x="240" y="180" font-family="Arial, Helvetica, sans-serif" font-size="36" fill="#1f2937" text-anchor="middle">Producto 1</text>
+    </g>
+  </g>
+</svg>
