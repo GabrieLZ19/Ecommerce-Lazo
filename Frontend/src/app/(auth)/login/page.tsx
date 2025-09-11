@@ -17,6 +17,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { FcGoogle } from "react-icons/fc";
+import { FaFacebook } from "react-icons/fa";
 
 function LoginPageContent() {
   const [email, setEmail] = useState("");
@@ -26,6 +28,7 @@ function LoginPageContent() {
   const [error, setError] = useState("");
 
   const { signIn } = useAuth();
+  const { signInWithOAuth } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -131,6 +134,31 @@ function LoginPageContent() {
             </CardContent>
 
             <CardFooter className="flex flex-col space-y-4">
+              <div className="flex w-full gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    setLoading(true);
+                    await signInWithOAuth("google");
+                    setLoading(false);
+                  }}
+                >
+                  <FcGoogle /> Entrar con Google
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="flex-1 flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    setLoading(true);
+                    await signInWithOAuth("facebook");
+                    setLoading(false);
+                  }}
+                >
+                  <FaFacebook className="text-blue-600" /> Entrar con Facebook
+                </Button>
+              </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Iniciar Sesión

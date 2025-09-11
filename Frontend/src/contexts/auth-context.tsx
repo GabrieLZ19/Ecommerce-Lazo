@@ -20,6 +20,7 @@ interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string, userData: any) => Promise<any>;
   signIn: (email: string, password: string) => Promise<any>;
+  signInWithOAuth: (provider: "google" | "facebook") => Promise<any>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<any>;
   updateProfile: (data: any) => Promise<any>;
@@ -49,6 +50,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: { session },
         } = await supabase.auth.getSession();
         setUser(session?.user ?? null);
+        // Si hay sesión, sincronizar perfil en backend
+        if (session?.access_token) {
+          try {
+            await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL}/users/sync-profile`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+          } catch (syncErr) {
+            console.warn("Failed to sync profile with backend:", syncErr);
+          }
+        }
       } catch (error) {
         console.error("Error getting session:", error);
       } finally {
@@ -64,6 +82,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      // Cuando haya una nueva sesión, sincronizar perfil en backend
+      if (session?.access_token) {
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/sync-profile`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+          });
+        } catch (syncErr) {
+          console.warn("Failed to sync profile on auth state change:", syncErr);
+        }
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -164,6 +196,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithOAuth = async (provider: "google" | "facebook") => {
+    if (!supabase) {
+      return { data: null, error: "Supabase not configured" };
+    }
+
+    try {
+      // Supabase will redirect the user to the provider's consent page
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/`
+              : undefined,
+        },
+      });
+
+      if (error) {
+        console.error("Auth Context - signInWithOAuth error:", error);
+        return { data: null, error: error.message || error };
+      }
+
+      return { data, error: null };
+    } catch (err: any) {
+      return { data: null, error: err.message || String(err) };
+    }
+  };
+
   const signOut = async () => {
     if (!supabase) return;
 
@@ -231,6 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signUp,
     signIn,
+    signInWithOAuth,
     signOut,
     resetPassword,
     updateProfile,

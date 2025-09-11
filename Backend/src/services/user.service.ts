@@ -322,6 +322,44 @@ export class UserService {
   }
 
   /**
+   * Upsert user profile from Supabase Auth user object
+   */
+  static async upsertProfileFromAuth(authUser: any) {
+    try {
+      if (!authUser || !authUser.id) {
+        throw new Error("Invalid auth user");
+      }
+
+      const profile = {
+        id: authUser.id,
+        email: authUser.email,
+        name:
+          authUser.user_metadata?.full_name ||
+          authUser.user_metadata?.name ||
+          authUser.email?.split("@")[0] ||
+          null,
+        phone: authUser.user_metadata?.phone || null,
+        avatar_url: authUser.user_metadata?.avatar_url || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from("users")
+        .upsert([profile], { onConflict: "id" })
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Failed to upsert profile: ${error.message}`);
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`Failed to upsert profile from auth: ${error}`);
+    }
+  }
+
+  /**
    * Obtener usuarios con paginación (admin)
    */
   static async getUsers(page: number = 1, limit: number = 10) {

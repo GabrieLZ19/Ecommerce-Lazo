@@ -299,6 +299,42 @@ export class UserController {
   }
 
   /**
+   * Sincronizar perfil desde token de Supabase (usado por OAuth flows)
+   */
+  static async syncProfile(req: Request, res: Response): Promise<void> {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        res
+          .status(400)
+          .json({ success: false, message: "Authorization token required" });
+        return;
+      }
+
+      const token = authHeader.substring(7);
+      const authUser = await UserService.verifySession(token);
+
+      if (!authUser) {
+        res.status(401).json({ success: false, message: "Invalid token" });
+        return;
+      }
+
+      const profile = await UserService.upsertProfileFromAuth(authUser);
+
+      res.json({ success: true, data: profile });
+    } catch (error) {
+      console.error("Error syncing profile:", error);
+      res
+        .status(500)
+        .json({
+          success: false,
+          message: "Error syncing profile",
+          error: error instanceof Error ? error.message : String(error),
+        });
+    }
+  }
+
+  /**
    * Obtener todos los usuarios (admin)
    */
   static async getUsers(req: Request, res: Response) {

@@ -10,6 +10,8 @@ router.post("/register", UserController.register);
 router.post("/login", UserController.login);
 router.post("/logout", UserController.logout);
 router.post("/forgot-password", UserController.forgotPassword);
+// Ruta para sincronizar perfil desde token (útil después de login OAuth en frontend)
+router.post("/sync-profile", UserController.syncProfile);
 
 // Rutas protegidas
 router.get("/profile", requireAuth, UserController.getProfile);
