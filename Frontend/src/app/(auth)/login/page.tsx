@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
-import { FaFacebook } from "react-icons/fa";
 
 function LoginPageContent() {
   const [email, setEmail] = useState("");
@@ -147,17 +146,7 @@ function LoginPageContent() {
                   <FcGoogle /> Entrar con Google
                 </Button>
 
-                <Button
-                  variant="outline"
-                  className="flex-1 flex items-center justify-center gap-2"
-                  onClick={async () => {
-                    setLoading(true);
-                    await signInWithOAuth("facebook");
-                    setLoading(false);
-                  }}
-                >
-                  <FaFacebook className="text-blue-600" /> Entrar con Facebook
-                </Button>
+                {/* Facebook login removed due to reliability issues */}
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

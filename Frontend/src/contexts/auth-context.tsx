@@ -20,7 +20,7 @@ interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string, userData: any) => Promise<any>;
   signIn: (email: string, password: string) => Promise<any>;
-  signInWithOAuth: (provider: "google" | "facebook") => Promise<any>;
+  signInWithOAuth: (provider: "google") => Promise<any>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<any>;
   updateProfile: (data: any) => Promise<any>;
@@ -196,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithOAuth = async (provider: "google" | "facebook") => {
+  const signInWithOAuth = async (provider: "google") => {
     if (!supabase) {
       return { data: null, error: "Supabase not configured" };
     }

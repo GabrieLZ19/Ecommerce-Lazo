@@ -25,9 +25,9 @@ export default function DeleteAccountPage() {
       </p>
 
       <p className="text-sm text-muted-foreground">
-        Nota: esta es una página de instrucciones. Si prefieres un borrado
-        automático desde Facebook, puedo implementar el Data Deletion Callback
-        (un endpoint que Facebook llama y que confirma la eliminación).
+        Nota: esta es una página de instrucciones. Podemos implementar un
+        endpoint de borrado automático (Data Deletion Callback) si necesitas
+        integración con terceros; contacta al equipo para coordinarlo.
       </p>
     </main>
   );
