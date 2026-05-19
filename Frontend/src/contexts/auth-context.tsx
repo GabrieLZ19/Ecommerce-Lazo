@@ -3,16 +3,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
 
-// Importamos supabase condicionalmente
 let supabase: any = null;
 
 try {
   const supabaseModule = require("@/lib/supabase");
   supabase = supabaseModule.supabase;
 } catch (error) {
-  console.warn(
-    "Supabase not configured properly. Please set up environment variables."
-  );
+  console.warn("Supabase not configured properly.");
 }
 
 interface AuthContextType {
@@ -29,7 +26,7 @@ interface AuthContextType {
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
+  undefined,
 );
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -43,14 +40,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Obtener sesión inicial
     const getInitialSession = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
         setUser(session?.user ?? null);
-        // Si hay sesión, sincronizar perfil en backend
+
         if (session?.access_token) {
           try {
             await fetch(
@@ -61,10 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   Authorization: `Bearer ${session.access_token}`,
                   "Content-Type": "application/json",
                 },
-              }
+              },
             );
           } catch (syncErr) {
-            console.warn("Failed to sync profile with backend:", syncErr);
+            console.warn("Failed to sync profile:", syncErr);
           }
         }
       } catch (error) {
@@ -76,13 +72,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     getInitialSession();
 
-    // Escuchar cambios de autenticación
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
       setUser(session?.user ?? null);
       setLoading(false);
-      // Cuando haya una nueva sesión, sincronizar perfil en backend
+
       if (session?.access_token) {
         try {
           await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/sync-profile`, {
@@ -93,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             },
           });
         } catch (syncErr) {
-          console.warn("Failed to sync profile on auth state change:", syncErr);
+          console.warn("Failed to sync profile:", syncErr);
         }
       }
     });
@@ -107,44 +102,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log("Auth Context - Iniciando signUp con:", {
-        email,
-        userData,
-        supabaseConfigured: !!supabase,
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/check-email`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        },
+      );
 
-      // Verificar email duplicado a través del backend (más seguro)
-      try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/users/check-email`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ email }),
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-
-          if (result.exists) {
-            console.log("Auth Context - Email ya registrado (backend):", email);
-            return {
-              data: null,
-              error: "Este email ya está registrado. Intenta iniciar sesión.",
-            };
-          }
+      if (response.ok) {
+        const result = await response.json();
+        if (result.exists) {
+          return {
+            data: null,
+            error: "Este email ya está registrado.",
+          };
         }
-      } catch (apiError) {
-        console.warn(
-          "Auth Context - Error verificando email via API:",
-          apiError
-        );
-        // Si falla la API, continuar con el registro (fallback)
       }
+    } catch (apiError) {
+      console.warn("Error verificando email via API:", apiError);
+    }
 
+    try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -158,16 +138,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      console.log("Auth Context - Respuesta de Supabase:", { data, error });
-
-      if (error) {
-        console.error("Auth Context - Error en signUp:", error);
-        throw error;
-      }
-
+      if (error) throw error;
       return { data, error: null };
     } catch (error: any) {
-      console.error("Auth Context - Exception en signUp:", error);
       return {
         data: null,
         error:
@@ -202,7 +175,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // Supabase will redirect the user to the provider's consent page
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -214,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        console.error("Auth Context - signInWithOAuth error:", error);
+        console.error("OAuth error:", error);
         return { data: null, error: error.message || error };
       }
 

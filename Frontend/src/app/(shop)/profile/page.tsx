@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -36,8 +37,12 @@ import {
   Loader2,
   Edit,
   ExternalLink,
+  Check,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { OrderService, Order as OrderType } from "@/services/order.service";
+import { validators } from "@/lib/validators";
 
 interface UserProfile {
   first_name: string;
@@ -67,6 +72,7 @@ function ProfilePageContent() {
     signOut,
     updateProfile,
     updatePassword,
+
     loading: authLoading,
   } = useAuth();
   const router = useRouter();
@@ -93,7 +99,7 @@ function ProfilePageContent() {
     country: "Argentina",
   });
 
-  // Password change state
+  // Password change state - MEJORADO
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -104,6 +110,8 @@ function ProfilePageContent() {
     new: false,
     confirm: false,
   });
+  const [passwordRequirements, setPasswordRequirements] = useState<any>(null);
+  const [passwordStep, setPasswordStep] = useState(1); // 1: Cambiar, 2: Confirmar por email
 
   // Orders state
   const [orders, setOrders] = useState<OrderType[]>([]);
@@ -140,7 +148,6 @@ function ProfilePageContent() {
       setOrders(userOrders);
     } catch (error) {
       console.error("Error loading orders:", error);
-      // Los datos mock se cargarán automáticamente desde el servicio
     } finally {
       setOrdersLoading(false);
     }
@@ -200,40 +207,135 @@ function ProfilePageContent() {
     }
   };
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
+  // MEJORADO: Validar nueva contraseña
+  const handleNewPasswordChange = (value: string) => {
+    setPasswordData((prev) => ({
+      ...prev,
+      newPassword: value,
+    }));
+
+    const result = validators.password(value);
+    setPasswordRequirements(result.requirements);
+  };
+
+  // PASO 1: Enviar email de confirmación - SEGURO
+  const handleSendConfirmationEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setSuccess("");
 
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setError("Las contraseñas nuevas no coinciden");
+    // Validar contraseña actual
+    if (!passwordData.currentPassword) {
+      setError("Ingresa tu contraseña actual");
       setLoading(false);
       return;
     }
 
-    if (passwordData.newPassword.length < 6) {
-      setError("La nueva contraseña debe tener al menos 6 caracteres");
+    // Validar nueva contraseña
+    const passwordResult = validators.password(passwordData.newPassword);
+    if (!passwordResult.valid) {
+      setError(
+        passwordResult.message || "La contraseña no cumple los requisitos",
+      );
+      setLoading(false);
+      return;
+    }
+
+    // Validar coincidencia
+    const matchResult = validators.passwordsMatch(
+      passwordData.newPassword,
+      passwordData.confirmPassword,
+    );
+    if (!matchResult.valid) {
+      setError(matchResult.message || "Las contraseñas no coinciden");
+      setLoading(false);
+      return;
+    }
+
+    // Evitar cambiar por la misma contraseña
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      setError("La nueva contraseña no puede ser igual a la contraseña actual");
       setLoading(false);
       return;
     }
 
     try {
-      const { error } = await updatePassword(passwordData.newPassword);
+      // Usar el servicio (token manejado internamente)
+      const { PasswordService } = await import("@/services/password.service");
+      const result = await PasswordService.sendPasswordChangeConfirmation(
+        user?.email || "",
+        passwordData.currentPassword,
+        passwordData.newPassword,
+      );
 
-      if (error) {
-        setError(error);
+      if (!result.success) {
+        setError(result.message);
+        setLoading(false);
         return;
       }
 
-      setSuccess("Contraseña cambiada correctamente");
+      setSuccess(
+        "Se ha enviado un email de confirmación a tu correo. Por favor verifica tu bandeja de entrada.",
+      );
+      setPasswordStep(2);
       setPasswordData({
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
       });
     } catch (err: any) {
-      setError(err.message || "Error al cambiar la contraseña");
+      setError(
+        err.message ||
+          "Error al enviar el email de confirmación. Intenta nuevamente.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reenviar email de confirmación (sin necesidad de contraseñas)
+  const handleResendConfirmationEmail = async () => {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      // Solo reenviamos el email con el usuario autenticado
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error("No hay sesión activa");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/users/resend-password-change-confirmation`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            email: user?.email,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Error al reenviar el email");
+      }
+
+      setSuccess(
+        "Email de confirmación reenviado. Revisa tu bandeja de entrada.",
+      );
+    } catch (err: any) {
+      setError(
+        err.message || "Error al reenviar el email. Intenta nuevamente.",
+      );
     } finally {
       setLoading(false);
     }
@@ -280,11 +382,11 @@ function ProfilePageContent() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex space-x-1 mb-8 border-b">
+        <div className="flex space-x-1 mb-8 border-b overflow-x-auto">
           <Button
             variant={activeTab === "profile" ? "default" : "ghost"}
             onClick={() => setActiveTab("profile")}
-            className="rounded-b-none"
+            className="rounded-b-none whitespace-nowrap"
           >
             <User className="h-4 w-4 mr-2" />
             Información Personal
@@ -292,7 +394,7 @@ function ProfilePageContent() {
           <Button
             variant={activeTab === "password" ? "default" : "ghost"}
             onClick={() => setActiveTab("password")}
-            className="rounded-b-none"
+            className="rounded-b-none whitespace-nowrap"
           >
             <Settings className="h-4 w-4 mr-2" />
             Cambiar Contraseña
@@ -300,7 +402,7 @@ function ProfilePageContent() {
           <Button
             variant={activeTab === "orders" ? "default" : "ghost"}
             onClick={() => setActiveTab("orders")}
-            className="rounded-b-none"
+            className="rounded-b-none whitespace-nowrap"
           >
             <Package className="h-4 w-4 mr-2" />
             Mis Órdenes
@@ -309,13 +411,15 @@ function ProfilePageContent() {
 
         {/* Error/Success Messages */}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6 flex gap-2">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
         {success && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-6">
-            {success}
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-6 flex gap-2">
+            <Check className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <span>{success}</span>
           </div>
         )}
 
@@ -354,7 +458,7 @@ function ProfilePageContent() {
                           first_name: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -370,7 +474,7 @@ function ProfilePageContent() {
                           last_name: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -403,7 +507,7 @@ function ProfilePageContent() {
                           phone: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                       placeholder="+54 11 1234-5678"
                     />
@@ -420,7 +524,7 @@ function ProfilePageContent() {
                           date_of_birth: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -433,7 +537,7 @@ function ProfilePageContent() {
                     onValueChange={(value) =>
                       setProfile((prev) => ({ ...prev, gender: value }))
                     }
-                    disabled={!isEditing}
+                    disabled={!isEditing || loading}
                   >
                     <SelectTrigger className={!isEditing ? "bg-gray-50" : ""}>
                       <SelectValue placeholder="Seleccionar género" />
@@ -461,7 +565,7 @@ function ProfilePageContent() {
                         address: e.target.value,
                       }))
                     }
-                    disabled={!isEditing}
+                    disabled={!isEditing || loading}
                     className={!isEditing ? "bg-gray-50" : ""}
                     placeholder="Calle y número"
                   />
@@ -480,7 +584,7 @@ function ProfilePageContent() {
                           city: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -496,7 +600,7 @@ function ProfilePageContent() {
                           state: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -512,7 +616,7 @@ function ProfilePageContent() {
                           postal_code: e.target.value,
                         }))
                       }
-                      disabled={!isEditing}
+                      disabled={!isEditing || loading}
                       className={!isEditing ? "bg-gray-50" : ""}
                     />
                   </div>
@@ -524,6 +628,7 @@ function ProfilePageContent() {
                       type="button"
                       variant="outline"
                       onClick={() => setIsEditing(false)}
+                      disabled={loading}
                     >
                       Cancelar
                     </Button>
@@ -540,7 +645,7 @@ function ProfilePageContent() {
           </Card>
         )}
 
-        {/* Password Tab */}
+        {/* Password Tab - MEJORADO */}
         {activeTab === "password" && (
           <Card>
             <CardHeader>
@@ -550,128 +655,355 @@ function ProfilePageContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handlePasswordChange} className="space-y-6">
-                <div>
-                  <Label htmlFor="current_password">Contraseña Actual</Label>
-                  <div className="relative">
-                    <Input
-                      id="current_password"
-                      type={showPasswords.current ? "text" : "password"}
-                      value={passwordData.currentPassword}
-                      onChange={(e) =>
-                        setPasswordData((prev) => ({
-                          ...prev,
-                          currentPassword: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() =>
-                        setShowPasswords((prev) => ({
-                          ...prev,
-                          current: !prev.current,
-                        }))
-                      }
-                    >
-                      {showPasswords.current ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
+              {passwordStep === 1 ? (
+                // PASO 1: Ingresar contraseñas
+                <form
+                  onSubmit={handleSendConfirmationEmail}
+                  className="space-y-6"
+                >
+                  {/* Contraseña Actual */}
+                  <div>
+                    <Label htmlFor="current_password">Contraseña Actual</Label>
+                    <div className="relative">
+                      <Input
+                        id="current_password"
+                        type={showPasswords.current ? "text" : "password"}
+                        value={passwordData.currentPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            currentPassword: e.target.value,
+                          }))
+                        }
+                        required
+                        disabled={loading}
+                        placeholder="Tu contraseña actual"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() =>
+                          setShowPasswords((prev) => ({
+                            ...prev,
+                            current: !prev.current,
+                          }))
+                        }
+                      >
+                        {showPasswords.current ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <Label htmlFor="new_password">Nueva Contraseña</Label>
-                  <div className="relative">
-                    <Input
-                      id="new_password"
-                      type={showPasswords.new ? "text" : "password"}
-                      value={passwordData.newPassword}
-                      onChange={(e) =>
-                        setPasswordData((prev) => ({
-                          ...prev,
-                          newPassword: e.target.value,
-                        }))
-                      }
-                      required
-                      minLength={6}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() =>
-                        setShowPasswords((prev) => ({
-                          ...prev,
-                          new: !prev.new,
-                        }))
-                      }
-                    >
-                      {showPasswords.new ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
+                  {/* Nueva Contraseña */}
+                  <div>
+                    <Label htmlFor="new_password">Nueva Contraseña</Label>
+                    <div className="relative">
+                      <Input
+                        id="new_password"
+                        type={showPasswords.new ? "text" : "password"}
+                        value={passwordData.newPassword}
+                        onChange={(e) =>
+                          handleNewPasswordChange(e.target.value)
+                        }
+                        required
+                        disabled={loading}
+                        placeholder="Mínimo 8 caracteres"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() =>
+                          setShowPasswords((prev) => ({
+                            ...prev,
+                            new: !prev.new,
+                          }))
+                        }
+                      >
+                        {showPasswords.new ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
 
-                <div>
-                  <Label htmlFor="confirm_password">
-                    Confirmar Nueva Contraseña
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="confirm_password"
-                      type={showPasswords.confirm ? "text" : "password"}
-                      value={passwordData.confirmPassword}
-                      onChange={(e) =>
-                        setPasswordData((prev) => ({
-                          ...prev,
-                          confirmPassword: e.target.value,
-                        }))
-                      }
-                      required
-                      minLength={6}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() =>
-                        setShowPasswords((prev) => ({
-                          ...prev,
-                          confirm: !prev.confirm,
-                        }))
-                      }
-                    >
-                      {showPasswords.confirm ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={loading}>
-                    {loading && (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {/* Requisitos de contraseña */}
+                    {passwordRequirements && (
+                      <div className="mt-3 rounded-md bg-muted p-3 space-y-2">
+                        <p className="text-xs font-semibold">Requisitos:</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="flex gap-2 items-center">
+                            {passwordRequirements.hasMinLength ? (
+                              <Check className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <X className="h-3 w-3 text-destructive" />
+                            )}
+                            <span
+                              className={
+                                passwordRequirements.hasMinLength
+                                  ? "text-green-600"
+                                  : ""
+                              }
+                            >
+                              8 caracteres
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            {passwordRequirements.hasUpperCase ? (
+                              <Check className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <X className="h-3 w-3 text-destructive" />
+                            )}
+                            <span
+                              className={
+                                passwordRequirements.hasUpperCase
+                                  ? "text-green-600"
+                                  : ""
+                              }
+                            >
+                              Mayúscula
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            {passwordRequirements.hasLowerCase ? (
+                              <Check className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <X className="h-3 w-3 text-destructive" />
+                            )}
+                            <span
+                              className={
+                                passwordRequirements.hasLowerCase
+                                  ? "text-green-600"
+                                  : ""
+                              }
+                            >
+                              Minúscula
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            {passwordRequirements.hasNumber ? (
+                              <Check className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <X className="h-3 w-3 text-destructive" />
+                            )}
+                            <span
+                              className={
+                                passwordRequirements.hasNumber
+                                  ? "text-green-600"
+                                  : ""
+                              }
+                            >
+                              Número
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     )}
-                    Cambiar Contraseña
-                  </Button>
+                  </div>
+
+                  {/* Confirmar Nueva Contraseña */}
+                  <div>
+                    <Label htmlFor="confirm_password">
+                      Confirmar Nueva Contraseña
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="confirm_password"
+                        type={showPasswords.confirm ? "text" : "password"}
+                        value={passwordData.confirmPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            confirmPassword: e.target.value,
+                          }))
+                        }
+                        required
+                        disabled={loading}
+                        placeholder="Repite tu nueva contraseña"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() =>
+                          setShowPasswords((prev) => ({
+                            ...prev,
+                            confirm: !prev.confirm,
+                          }))
+                        }
+                      >
+                        {showPasswords.confirm ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {passwordData.newPassword &&
+                      passwordData.confirmPassword &&
+                      passwordData.newPassword !==
+                        passwordData.confirmPassword && (
+                        <p className="text-xs text-destructive mt-1 flex gap-1">
+                          <X className="h-3 w-3" /> Las contraseñas no coinciden
+                        </p>
+                      )}
+                    {passwordData.newPassword &&
+                      passwordData.confirmPassword &&
+                      passwordData.newPassword ===
+                        passwordData.confirmPassword && (
+                        <p className="text-xs text-green-600 mt-1 flex gap-1">
+                          <Check className="h-3 w-3" /> Las contraseñas
+                          coinciden
+                        </p>
+                      )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      disabled={
+                        loading ||
+                        !passwordData.currentPassword ||
+                        !passwordData.newPassword ||
+                        !passwordData.confirmPassword ||
+                        passwordData.newPassword !==
+                          passwordData.confirmPassword
+                      }
+                    >
+                      {loading && (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      )}
+                      Enviar Confirmación por Email
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                // PASO 2: Confirmación por Email
+                <div className="py-12 px-6">
+                  <div className="max-w-lg mx-auto">
+                    {/* Icono animado */}
+                    <div className="flex justify-center mb-8">
+                      <div className="p-4 bg-blue-50 rounded-full">
+                        <Mail className="h-12 w-12 text-blue-600 animate-pulse" />
+                      </div>
+                    </div>
+
+                    {/* Título */}
+                    <h3 className="text-2xl font-bold text-center text-gray-900 mb-2">
+                      Confirmación Enviada
+                    </h3>
+                    <p className="text-center text-gray-600 mb-8">
+                      Hemos enviado un enlace de confirmación a:
+                    </p>
+                    <p className="text-center text-lg font-semibold text-blue-600 break-all mb-8">
+                      {user?.email}
+                    </p>
+
+                    {/* Pasos a seguir */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
+                      <h4 className="font-semibold text-gray-900 mb-4">
+                        Pasos a seguir:
+                      </h4>
+                      <ol className="space-y-4">
+                        <li className="flex gap-3">
+                          <div className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-blue-600 text-white font-semibold text-sm">
+                            1
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-gray-700">
+                              Abre tu cliente de correo electrónico
+                            </p>
+                          </div>
+                        </li>
+                        <li className="flex gap-3">
+                          <div className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-blue-600 text-white font-semibold text-sm">
+                            2
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-gray-700">
+                              Busca el correo con asunto "Cambio de Contraseña -
+                              LAZO"
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Revisa también la carpeta de spam o correo no
+                              deseado
+                            </p>
+                          </div>
+                        </li>
+                        <li className="flex gap-3">
+                          <div className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-blue-600 text-white font-semibold text-sm">
+                            3
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-gray-700">
+                              Haz clic en el enlace "Confirmar Cambio de
+                              Contraseña"
+                            </p>
+                          </div>
+                        </li>
+                        <li className="flex gap-3">
+                          <div className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-full bg-blue-600 text-white font-semibold text-sm">
+                            4
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-gray-700">
+                              Tu contraseña se actualizará automáticamente
+                            </p>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+
+                    {/* Aviso de seguridad */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-8">
+                      <p className="text-sm text-amber-900">
+                        <span className="font-semibold">Nota importante:</span>{" "}
+                        El enlace de confirmación expira en 1 hora. Si no
+                        realizaste esta solicitud, puedes ignorar este correo.
+                      </p>
+                    </div>
+
+                    {/* Acciones */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          setPasswordStep(1);
+                          setPasswordData({
+                            currentPassword: "",
+                            newPassword: "",
+                            confirmPassword: "",
+                          });
+                          setPasswordRequirements(null);
+                        }}
+                        disabled={loading}
+                      >
+                        Volver Atrás
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        onClick={handleResendConfirmationEmail}
+                        disabled={loading}
+                      >
+                        {loading && (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        )}
+                        Reenviar Confirmación
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </form>
+              )}
             </CardContent>
           </Card>
         )}
@@ -698,63 +1030,45 @@ function ProfilePageContent() {
                     No tienes órdenes aún
                   </p>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Cuando realices tu primera compra, aparecerá aquí
+                    ¡Comienza a comprar en LAZO hoy!
                   </p>
-                  <Button onClick={() => router.push("/products")}>
-                    Explorar Productos
+                  <Button asChild>
+                    <a href="/products">Ver Productos</a>
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {orders.map((order) => {
-                    const statusInfo = OrderService.getStatusBadge(
-                      order.status,
-                      order.payment_status
-                    );
-                    return (
-                      <div
-                        key={order.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:shadow-sm transition-shadow cursor-pointer"
-                        onClick={() =>
-                          router.push(
-                            `/order-confirmation?order_id=${order.id}&payment_status=${order.payment_status}`
-                          )
-                        }
-                      >
-                        <div className="flex items-center space-x-4">
-                          <Package className="h-8 w-8 text-gray-400" />
-                          <div>
-                            <p className="font-medium">
-                              Orden #{order.order_number}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {OrderService.formatDate(order.created_at)} •{" "}
-                              {order.items.length} productos
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {order.payment_method === "mercadopago"
-                                ? "MercadoPago"
-                                : "Transferencia Bancaria"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold">
-                            {OrderService.formatPrice(order.total)}
-                          </p>
-                          <Badge variant={statusInfo.variant} className="mt-1">
-                            {statusInfo.label}
-                          </Badge>
-                          <div className="flex items-center mt-1">
-                            <ExternalLink className="h-3 w-3 mr-1 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">
-                              Ver detalles
-                            </span>
-                          </div>
-                        </div>
+                  {orders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="border rounded-lg p-4 hover:bg-gray-50 transition"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold">Orden #{order.id}</span>
+                        <Badge
+                          variant={
+                            order.status === "completed"
+                              ? "default"
+                              : order.status === "pending"
+                                ? "secondary"
+                                : "destructive"
+                          }
+                        >
+                          {order.status === "completed"
+                            ? "Completada"
+                            : order.status === "pending"
+                              ? "Pendiente"
+                              : "Cancelada"}
+                        </Badge>
                       </div>
-                    );
-                  })}
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(order.created_at).toLocaleDateString("es-AR")}
+                      </p>
+                      <p className="font-semibold text-lg mt-2">
+                        ${order.total.toFixed(2)}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>

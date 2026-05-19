@@ -16,9 +16,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Check, X, ChevronRight } from "lucide-react";
+import { validators } from "@/lib/validators";
 
 function RegisterPageContent() {
+  const [step, setStep] = useState(1); // 1: Datos básicos, 2: Contraseña
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -28,136 +30,120 @@ function RegisterPageContent() {
     confirmPassword: "",
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
+  const [passwordRequirements, setPasswordRequirements] = useState<any>(null);
 
   const { signUp } = useAuth();
   const router = useRouter();
-
-  // Función para validar teléfono en tiempo real
-  // Validación en tiempo real de campos
-  const validateField = (name: string, value: string) => {
-    const errors: { [key: string]: string } = {};
-
-    switch (name) {
-      case "firstName":
-        if (!value.trim()) {
-          errors.firstName = "El nombre es obligatorio";
-        } else if (value.trim().length < 2) {
-          errors.firstName = "El nombre debe tener al menos 2 caracteres";
-        } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(value)) {
-          errors.firstName = "El nombre solo puede contener letras";
-        }
-        break;
-
-      case "lastName":
-        if (!value.trim()) {
-          errors.lastName = "El apellido es obligatorio";
-        } else if (value.trim().length < 2) {
-          errors.lastName = "El apellido debe tener al menos 2 caracteres";
-        } else if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(value)) {
-          errors.lastName = "El apellido solo puede contener letras";
-        }
-        break;
-
-      case "email":
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!value.trim()) {
-          errors.email = "El email es obligatorio";
-        } else if (!emailRegex.test(value)) {
-          errors.email = "Ingresa un email válido";
-        }
-        break;
-
-      case "phone":
-        const cleanPhone = value.replace(/\D/g, "");
-        if (value && cleanPhone.length > 0 && cleanPhone.length < 8) {
-          errors.phone = "El teléfono debe tener al menos 8 dígitos";
-        } else if (value && cleanPhone.length > 10) {
-          errors.phone = "El teléfono no puede tener más de 10 dígitos";
-        }
-        break;
-
-      case "password":
-        if (!value) {
-          errors.password = "La contraseña es obligatoria";
-        } else if (value.length < 6) {
-          errors.password = "La contraseña debe tener al menos 6 caracteres";
-        } else if (!/(?=.*[a-z])(?=.*[A-Z])|(?=.*\d)/.test(value)) {
-          errors.password =
-            "La contraseña debe tener al menos una mayúscula o un número";
-        }
-        break;
-
-      case "confirmPassword":
-        if (!value) {
-          errors.confirmPassword = "Confirma tu contraseña";
-        } else if (value !== formData.password) {
-          errors.confirmPassword = "Las contraseñas no coinciden";
-        }
-        break;
-    }
-
-    return errors;
-  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     let processedValue = value;
 
-    // Validación específica para teléfono (solo permitir números y algunos caracteres especiales)
     if (name === "phone") {
-      // Permitir solo números, espacios, guiones y el signo +
-      const phoneRegex = /[^0-9\s\-\+]/g;
-      processedValue = value.replace(phoneRegex, "");
-
-      // Limitar longitud
+      processedValue = value.replace(/[^0-9\s\-\+]/g, "");
       if (processedValue.length > 20) {
         processedValue = processedValue.slice(0, 20);
       }
     }
 
-    // Actualizar el valor
     setFormData({
       ...formData,
       [name]: processedValue,
     });
 
-    // Validar en tiempo real
-    const fieldValidationErrors = validateField(name, processedValue);
+    let fieldError = "";
+    switch (name) {
+      case "firstName":
+      case "lastName": {
+        const result = validators.name(processedValue);
+        fieldError = result.message || "";
+        break;
+      }
+      case "email": {
+        const result = validators.email(processedValue);
+        fieldError = result.message || "";
+        break;
+      }
+      case "phone": {
+        const result = validators.phone(processedValue);
+        fieldError = result.message || "";
+        break;
+      }
+      case "password": {
+        const result = validators.password(processedValue);
+        fieldError = result.message || "";
+        setPasswordRequirements(result.requirements);
+        break;
+      }
+      case "confirmPassword": {
+        const result = validators.passwordsMatch(
+          formData.password,
+          processedValue,
+        );
+        fieldError = result.message || "";
+        break;
+      }
+    }
+
     setFieldErrors((prev) => ({
       ...prev,
-      [name]: fieldValidationErrors[name] || "",
+      [name]: fieldError,
     }));
 
-    // Limpiar error general si se está corrigiendo
     if (error) {
       setError("");
     }
   };
 
-  // Validación completa del formulario
-  const validateForm = () => {
-    const allErrors: { [key: string]: string } = {};
+  const validateStep1 = () => {
+    const errors: { [key: string]: string } = {};
 
-    // Validar todos los campos
-    Object.keys(formData).forEach((field) => {
-      const fieldErrors = validateField(
-        field,
-        formData[field as keyof typeof formData]
-      );
-      Object.assign(allErrors, fieldErrors);
-    });
+    let result = validators.name(formData.firstName);
+    if (!result.valid) errors.firstName = result.message || "";
 
-    // Validaciones adicionales
-    if (formData.password !== formData.confirmPassword) {
-      allErrors.confirmPassword = "Las contraseñas no coinciden";
+    result = validators.name(formData.lastName);
+    if (!result.valid) errors.lastName = result.message || "";
+
+    result = validators.email(formData.email);
+    if (!result.valid) errors.email = result.message || "";
+
+    if (formData.phone) {
+      result = validators.phone(formData.phone);
+      if (!result.valid) errors.phone = result.message || "";
     }
 
-    setFieldErrors(allErrors);
-    return Object.keys(allErrors).length === 0;
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateStep2 = () => {
+    const errors: { [key: string]: string } = {};
+
+    let result = validators.password(formData.password);
+    if (!result.valid) errors.password = result.message || "";
+
+    result = validators.passwordsMatch(
+      formData.password,
+      formData.confirmPassword,
+    );
+    if (!result.valid) errors.confirmPassword = result.message || "";
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleNextStep = () => {
+    if (validateStep1()) {
+      setError("");
+      setStep(2);
+    } else {
+      setError("Por favor completa los campos requeridos correctamente");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -165,60 +151,40 @@ function RegisterPageContent() {
     setLoading(true);
     setError("");
 
-    // Validar formulario completo
-    if (!validateForm()) {
+    if (!validateStep2()) {
       setError("Por favor corrige los errores antes de continuar");
       setLoading(false);
       return;
     }
 
     try {
-      console.log("Iniciando registro con:", {
-        email: formData.email,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        phone: formData.phone,
-      });
-
       const { data, error } = await signUp(formData.email, formData.password, {
         first_name: formData.firstName,
         last_name: formData.lastName,
         phone: formData.phone,
       });
 
-      console.log("Respuesta de signUp:", { data, error });
-
       if (error) {
-        // Manejar errores específicos de Supabase
         let errorMessage = error;
-
-        if (error.includes("User already registered")) {
+        if (
+          error.includes("User already registered") ||
+          error.includes("already")
+        ) {
           errorMessage =
-            "Este email ya está registrado. ¿Ya tienes una cuenta? Intenta iniciar sesión.";
-        } else if (error.includes("email") && error.includes("already")) {
-          errorMessage =
-            "Este email ya está en uso. Intenta con otro email o inicia sesión.";
+            "Este email ya está registrado. Intenta iniciar sesión.";
         } else if (error.includes("Invalid email")) {
           errorMessage = "El formato del email no es válido.";
-        } else if (error.includes("Password")) {
-          errorMessage = "La contraseña no cumple con los requisitos mínimos.";
-        } else if (error.includes("rate limit")) {
-          errorMessage =
-            "Demasiados intentos. Espera unos minutos antes de intentar nuevamente.";
         }
-
         setError(errorMessage);
         setLoading(false);
         return;
       }
 
       if (data) {
-        console.log("Registro exitoso:", data);
         setSuccess(true);
-        // Redirigir después de un momento
         setTimeout(() => {
           router.push("/login");
-        }, 3000);
+        }, 2000);
       }
     } catch (err: any) {
       setError("Error inesperado. Por favor intenta nuevamente.");
@@ -230,12 +196,14 @@ function RegisterPageContent() {
   if (success) {
     return (
       <div className="container flex h-screen w-screen flex-col items-center justify-center">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-          <Card>
+        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[380px]">
+          <Card className="border-green-200 bg-green-50">
             <CardHeader>
-              <CardTitle className="text-center">¡Cuenta creada!</CardTitle>
-              <CardDescription className="text-center">
-                Se ha enviado un email de confirmación a tu correo.
+              <CardTitle className="text-center text-green-900 flex items-center justify-center gap-2">
+                <Check className="h-5 w-5" /> ¡Cuenta creada!
+              </CardTitle>
+              <CardDescription className="text-center text-green-800">
+                Se ha enviado un email de confirmación.
                 <br />
                 Revisa tu bandeja de entrada y sigue las instrucciones.
               </CardDescription>
@@ -252,192 +220,347 @@ function RegisterPageContent() {
   }
 
   return (
-    <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+    <div className="container flex min-h-screen w-screen flex-col items-center justify-center  py-8">
+      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
         <div className="flex flex-col space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Crear cuenta
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight">LAZO</h1>
           <p className="text-sm text-muted-foreground">
-            Completa los datos para crear tu cuenta en LAZO
+            Crea tu cuenta y comienza a comprar
           </p>
         </div>
 
-        <Card>
+        <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Registro</CardTitle>
-            <CardDescription>
-              Crea tu cuenta para comenzar a comprar
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Crear Cuenta</CardTitle>
+                <CardDescription>Paso {step} de 2</CardDescription>
+              </div>
+              <div className="text-xs font-semibold text-muted-foreground">
+                {step}/2
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div className="mt-4 h-1 w-full bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${(step / 2) * 100}%` }}
+              />
+            </div>
           </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-              {error && (
-                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
-                  {error}
-                </div>
-              )}
 
-              <div className="grid grid-cols-2 gap-4">
+          {step === 1 ? (
+            // PASO 1: Datos básicos
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleNextStep();
+              }}
+            >
+              <CardContent className="space-y-4">
+                {error && (
+                  <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive flex gap-2">
+                    <X className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    {error}
+                  </div>
+                )}
+
+                {/* Nombre y Apellido en grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName" className="text-xs">
+                      Nombre
+                    </Label>
+                    <Input
+                      id="firstName"
+                      name="firstName"
+                      placeholder="Juan"
+                      value={formData.firstName}
+                      onChange={handleInputChange}
+                      required
+                      disabled={loading}
+                      className={`text-sm ${fieldErrors.firstName ? "border-destructive" : ""}`}
+                    />
+                    {fieldErrors.firstName && (
+                      <p className="text-xs text-destructive">
+                        {fieldErrors.firstName}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName" className="text-xs">
+                      Apellido
+                    </Label>
+                    <Input
+                      id="lastName"
+                      name="lastName"
+                      placeholder="Pérez"
+                      value={formData.lastName}
+                      onChange={handleInputChange}
+                      required
+                      disabled={loading}
+                      className={`text-sm ${fieldErrors.lastName ? "border-destructive" : ""}`}
+                    />
+                    {fieldErrors.lastName && (
+                      <p className="text-xs text-destructive">
+                        {fieldErrors.lastName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Email */}
                 <div className="space-y-2">
-                  <Label htmlFor="firstName">Nombre</Label>
+                  <Label htmlFor="email" className="text-xs">
+                    Email
+                  </Label>
                   <Input
-                    id="firstName"
-                    name="firstName"
-                    type="text"
-                    placeholder="Tu nombre"
-                    value={formData.firstName}
+                    id="email"
+                    type="email"
+                    name="email"
+                    placeholder="tu@email.com"
+                    value={formData.email}
                     onChange={handleInputChange}
                     required
                     disabled={loading}
-                    className={fieldErrors.firstName ? "border-red-500" : ""}
+                    className={`text-sm ${fieldErrors.email ? "border-destructive" : ""}`}
                   />
-                  {fieldErrors.firstName && (
-                    <p className="text-sm text-red-500">
-                      {fieldErrors.firstName}
+                  {fieldErrors.email && (
+                    <p className="text-xs text-destructive">
+                      {fieldErrors.email}
                     </p>
                   )}
                 </div>
+
+                {/* Teléfono */}
                 <div className="space-y-2">
-                  <Label htmlFor="lastName">Apellido</Label>
+                  <Label htmlFor="phone" className="text-xs">
+                    Teléfono (Opcional)
+                  </Label>
                   <Input
-                    id="lastName"
-                    name="lastName"
-                    type="text"
-                    placeholder="Tu apellido"
-                    value={formData.lastName}
+                    id="phone"
+                    name="phone"
+                    placeholder="+54 11 1234-5678"
+                    value={formData.phone}
                     onChange={handleInputChange}
-                    required
                     disabled={loading}
-                    className={fieldErrors.lastName ? "border-red-500" : ""}
+                    className={`text-sm ${fieldErrors.phone ? "border-destructive" : ""}`}
                   />
-                  {fieldErrors.lastName && (
-                    <p className="text-sm text-red-500">
-                      {fieldErrors.lastName}
+                  {fieldErrors.phone && (
+                    <p className="text-xs text-destructive">
+                      {fieldErrors.phone}
                     </p>
                   )}
                 </div>
-              </div>
+              </CardContent>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  disabled={loading}
-                  className={fieldErrors.email ? "border-red-500" : ""}
-                />
-                {fieldErrors.email && (
-                  <p className="text-sm text-red-500">{fieldErrors.email}</p>
+              <CardFooter>
+                <Button type="submit" className="w-full gap-2">
+                  Siguiente <ChevronRight className="h-4 w-4" />
+                </Button>
+              </CardFooter>
+            </form>
+          ) : (
+            // PASO 2: Contraseña
+            <form onSubmit={handleSubmit}>
+              <CardContent className="space-y-4">
+                {error && (
+                  <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive flex gap-2">
+                    <X className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    {error}
+                  </div>
                 )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="phone">Teléfono (opcional)</Label>
-                <Input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  placeholder="+54 11 1234-5678"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  className={fieldErrors.phone ? "border-red-500" : ""}
-                />
-                {fieldErrors.phone && (
-                  <p className="text-sm text-red-500">{fieldErrors.phone}</p>
-                )}
-              </div>
+                {/* Contraseña */}
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-xs">
+                    Contraseña
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Mínimo 8 caracteres"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      required
+                      disabled={loading}
+                      className={`text-sm pr-10 ${fieldErrors.password ? "border-destructive" : ""}`}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  {fieldErrors.password && (
+                    <p className="text-xs text-destructive">
+                      {fieldErrors.password}
+                    </p>
+                  )}
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Mínimo 6 caracteres"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    required
-                    disabled={loading}
-                    className={fieldErrors.password ? "border-red-500" : ""}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                    disabled={loading}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
+                  {/* Requisitos compactos */}
+                  {passwordRequirements && (
+                    <div className="mt-2 rounded-md bg-muted p-2 space-y-1">
+                      <p className="text-xs font-semibold">Requisitos:</p>
+                      <div className="grid grid-cols-2 gap-1 text-xs">
+                        <div className="flex gap-1 items-center">
+                          {passwordRequirements.hasMinLength ? (
+                            <Check className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <X className="h-3 w-3 text-destructive" />
+                          )}
+                          <span
+                            className={
+                              passwordRequirements.hasMinLength
+                                ? "text-green-600"
+                                : ""
+                            }
+                          >
+                            8 caracteres
+                          </span>
+                        </div>
+                        <div className="flex gap-1 items-center">
+                          {passwordRequirements.hasUpperCase ? (
+                            <Check className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <X className="h-3 w-3 text-destructive" />
+                          )}
+                          <span
+                            className={
+                              passwordRequirements.hasUpperCase
+                                ? "text-green-600"
+                                : ""
+                            }
+                          >
+                            Mayúscula
+                          </span>
+                        </div>
+                        <div className="flex gap-1 items-center">
+                          {passwordRequirements.hasLowerCase ? (
+                            <Check className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <X className="h-3 w-3 text-destructive" />
+                          )}
+                          <span
+                            className={
+                              passwordRequirements.hasLowerCase
+                                ? "text-green-600"
+                                : ""
+                            }
+                          >
+                            Minúscula
+                          </span>
+                        </div>
+                        <div className="flex gap-1 items-center">
+                          {passwordRequirements.hasNumber ? (
+                            <Check className="h-3 w-3 text-green-600" />
+                          ) : (
+                            <X className="h-3 w-3 text-destructive" />
+                          )}
+                          <span
+                            className={
+                              passwordRequirements.hasNumber
+                                ? "text-green-600"
+                                : ""
+                            }
+                          >
+                            Número
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {fieldErrors.password && (
-                  <p className="text-sm text-red-500">{fieldErrors.password}</p>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-                <div className="relative">
-                  <Input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Repite tu contraseña"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    required
-                    disabled={loading}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full px-3"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
+                {/* Confirmar Contraseña */}
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="text-xs">
+                    Confirmar Contraseña
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="Repite tu contraseña"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      required
+                      disabled={loading}
+                      className={`text-sm pr-10 ${fieldErrors.confirmPassword ? "border-destructive" : ""}`}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                      onClick={() =>
+                        setShowConfirmPassword(!showConfirmPassword)
+                      }
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  {fieldErrors.confirmPassword && (
+                    <p className="text-xs text-destructive">
+                      {fieldErrors.confirmPassword}
+                    </p>
+                  )}
                 </div>
-                {fieldErrors.confirmPassword && (
-                  <p className="text-sm text-red-500">
-                    {fieldErrors.confirmPassword}
-                  </p>
-                )}
-              </div>
-            </CardContent>
+              </CardContent>
 
-            <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Crear Cuenta
-              </Button>
-
-              <div className="text-center text-sm text-muted-foreground">
-                ¿Ya tienes una cuenta?{" "}
-                <Link href="/login" className="text-primary hover:underline">
-                  Inicia sesión aquí
-                </Link>
-              </div>
-            </CardFooter>
-          </form>
+              <CardFooter className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep(1)}
+                  disabled={loading}
+                >
+                  Atrás
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={
+                    loading ||
+                    !!fieldErrors.password ||
+                    !!fieldErrors.confirmPassword
+                  }
+                >
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Crear Cuenta
+                </Button>
+              </CardFooter>
+            </form>
+          )}
         </Card>
+
+        {/* Link a Login */}
+        <div className="text-center text-sm text-muted-foreground">
+          ¿Ya tienes cuenta?{" "}
+          <Link
+            href="/login"
+            className="text-primary hover:underline font-semibold"
+          >
+            Inicia sesión
+          </Link>
+        </div>
       </div>
     </div>
   );

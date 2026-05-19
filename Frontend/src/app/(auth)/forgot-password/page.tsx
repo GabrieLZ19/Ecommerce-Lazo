@@ -15,32 +15,49 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, Loader2, Mail } from "lucide-react";
+import { Loader2, Check, X } from "lucide-react";
+import { validators } from "@/lib/validators";
 
-function ForgotPasswordPageContent() {
+function ForgotPasswordContent() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [emailError, setEmailError] = useState("");
 
   const { resetPassword } = useAuth();
 
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEmail(value);
+
+    const result = validators.email(value);
+    setEmailError(result.message || "");
+
+    if (error) setError("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
-    try {
-      const { data, error } = await resetPassword(email);
+    const result = validators.email(email);
+    if (!result.valid) {
+      setEmailError(result.message || "");
+      return;
+    }
 
-      if (error) {
-        setError(error);
+    setLoading(true);
+    try {
+      const result = await resetPassword(email);
+
+      if (result.error) {
+        setError(result.error);
         return;
       }
 
-      if (data) {
-        setSuccess(true);
-      }
+      setSuccess(true);
+      setEmail("");
     } catch (err: any) {
       setError("Error inesperado. Por favor intenta nuevamente.");
     } finally {
@@ -51,38 +68,24 @@ function ForgotPasswordPageContent() {
   if (success) {
     return (
       <div className="container flex h-screen w-screen flex-col items-center justify-center">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-          <Card>
-            <CardHeader className="text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <Mail className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle>Email enviado</CardTitle>
-              <CardDescription>
-                Hemos enviado un enlace de restablecimiento de contraseña a{" "}
-                <strong>{email}</strong>
+        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
+          <Card className="border-green-200 bg-green-50">
+            <CardHeader>
+              <CardTitle className="text-center text-green-900 flex items-center justify-center gap-2">
+                <Check className="h-5 w-5" /> ¡Email Enviado!
+              </CardTitle>
+              <CardDescription className="text-center text-green-800">
+                Si esta cuenta existe en nuestro sistema, recibirás un email
                 <br />
-                <br />
-                Revisa tu bandeja de entrada y sigue las instrucciones para
-                restablecer tu contraseña.
+                con instrucciones para resetear tu contraseña.
               </CardDescription>
             </CardHeader>
-            <CardFooter className="flex flex-col space-y-2">
-              <Button asChild className="w-full">
-                <Link href="/login">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Volver al Login
-                </Link>
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSuccess(false);
-                  setEmail("");
-                }}
-                className="w-full"
-              >
-                Enviar a otro email
+            <CardFooter className="flex-col gap-4">
+              <p className="text-sm text-muted-foreground text-center">
+                Por favor revisa tu bandeja de entrada y spam.
+              </p>
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/login">Volver al Login</Link>
               </Button>
             </CardFooter>
           </Card>
@@ -93,28 +96,28 @@ function ForgotPasswordPageContent() {
 
   return (
     <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[400px]">
         <div className="flex flex-col space-y-2 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">
-            ¿Olvidaste tu contraseña?
+            Recuperar Contraseña
           </h1>
           <p className="text-sm text-muted-foreground">
-            Ingresa tu email y te enviaremos un enlace para restablecer tu
-            contraseña
+            Ingresa tu email para recibir instrucciones
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Restablecer contraseña</CardTitle>
+            <CardTitle>Resetear Contraseña</CardTitle>
             <CardDescription>
-              Te enviaremos un enlace de restablecimiento a tu email
+              Te enviaremos un link para crear una nueva contraseña
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               {error && (
-                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive flex gap-2">
+                  <X className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   {error}
                 </div>
               )}
@@ -126,25 +129,34 @@ function ForgotPasswordPageContent() {
                   type="email"
                   placeholder="tu@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={handleEmailChange}
                   required
                   disabled={loading}
+                  className={emailError ? "border-destructive" : ""}
                 />
+                {emailError && (
+                  <p className="text-xs text-destructive flex gap-1">
+                    <X className="h-3 w-3" /> {emailError}
+                  </p>
+                )}
               </div>
             </CardContent>
 
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || !!emailError}
+              >
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Enviar enlace de restablecimiento
+                Enviar Email de Recuperación
               </Button>
 
-              <Button asChild variant="ghost" className="w-full">
-                <Link href="/login">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Volver al Login
+              <div className="text-center text-sm text-muted-foreground">
+                <Link href="/login" className="text-primary hover:underline">
+                  Volver al login
                 </Link>
-              </Button>
+              </div>
             </CardFooter>
           </form>
         </Card>
@@ -156,7 +168,7 @@ function ForgotPasswordPageContent() {
 export default function ForgotPasswordPage() {
   return (
     <ProtectedRoute requireAuth={false}>
-      <ForgotPasswordPageContent />
+      <ForgotPasswordContent />
     </ProtectedRoute>
   );
 }
