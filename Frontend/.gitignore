@@ -122,3 +122,6 @@ temp/
 *.njsproj
 *.sln
 *.sw?
+
+
+.agents/
