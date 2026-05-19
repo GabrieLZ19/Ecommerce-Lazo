@@ -499,33 +499,20 @@ export class UserController {
         throw updateError;
       }
 
-      // Revocar refresh tokens via Admin REST API (require SERVICE_ROLE_KEY)
+      // Revocar todas las sesiones del usuario via SDK admin
       try {
-        const adminUrl = `${process.env.SUPABASE_URL}/admin/v1/users/${userId}/revoke-refresh-tokens`;
-        const resp = await fetch(adminUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-          },
-        });
-
-        if (!resp.ok) {
-          console.warn(
-            "Servidor: revocar-refresh-tokens falló:",
-            await resp.text(),
-          );
-        } else {
+        // @ts-ignore - método admin disponible en @supabase/supabase-js
+        if (
+          supabase.auth.admin.signOut &&
+          typeof supabase.auth.admin.signOut === "function"
+        ) {
+          await supabase.auth.admin.signOut(userId, "global");
           console.log(
-            "Servidor: revocación de refresh tokens solicitada correctamente",
+            "Servidor: todas las sesiones revocadas correctamente via SDK",
           );
         }
       } catch (err) {
-        console.warn(
-          "Servidor: error al intentar revocar refresh tokens:",
-          err,
-        );
+        console.warn("Servidor: error revocando sesiones via SDK:", err);
       }
 
       res.json({

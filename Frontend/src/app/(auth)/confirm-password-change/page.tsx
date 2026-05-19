@@ -50,22 +50,31 @@ export default function ConfirmPasswordChangePage() {
       setStatus("success");
       setMessage("¡Contraseña actualizada!");
 
-      // Cerrar sesión local para forzar re-login (evita sesión inconsistente)
-
-      try {
-        const { error: signOutError } = await supabase.auth.signOut();
-        if (signOutError) console.warn("signOut error:", signOutError);
-        else console.log("Cliente: signOut exitoso");
-
-        // Forzar recarga para que la app re-evalúe el estado de auth
-        // (esto evitará re-hidrataciones desde memoria)
-        window.location.href = "/login";
-        return;
-      } catch (err) {
-        console.warn("Error during signOut:", err);
+      // Limpiar todo el localStorage relacionado con Supabase/auth PRIMERO
+      const keysToDelete = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.includes("supabase") ||
+            key.includes("auth") ||
+            key.startsWith("sb-"))
+        ) {
+          keysToDelete.push(key);
+        }
       }
+      keysToDelete.forEach((key) => localStorage.removeItem(key));
+      console.log("Cliente: localStorage limpiado");
 
-      setTimeout(() => router.push("/login"), 3000);
+      // Intentar signOut pero NO esperar a que termine (ya falló en el servidor)
+      supabase.auth.signOut().catch(() => {
+        // Ignorar error - la sesión ya fue revocada en el servidor
+      });
+
+      // Esto re-evalúa todo el contexto de auth desde cero
+      setTimeout(() => {
+        window.location.href = "/login";
+      }, 300);
     } catch (error) {
       setStatus("error");
       setMessage("Error al procesar la confirmación");
