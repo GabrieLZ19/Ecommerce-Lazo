@@ -13,8 +13,20 @@ export const supabaseAdmin = createClient<Database>(
       autoRefreshToken: false,
       persistSession: false,
     },
-  }
+  },
 );
+
+// Función helper para normalizar productos
+const normalizeProduct = (product: any) => ({
+  ...product,
+  stock: product.stock_quantity,
+  active: product.is_active,
+  featured: product.is_featured,
+  product_variants: product.product_variants?.map((variant: any) => ({
+    ...variant,
+    stock: variant.stock_quantity,
+  })),
+});
 
 // Servicios de productos
 export class ProductService {
@@ -32,7 +44,7 @@ export class ProductService {
       sortBy?: string;
       sortOrder?: "asc" | "desc";
       featured?: boolean;
-    }
+    },
   ) {
     const offset = (page - 1) * limit;
 
@@ -40,13 +52,31 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*),
-        product_variants(*, color:colors(*), size:sizes(*))
+        product_variants(id, product_id, size_id, color_id, stock_quantity, sku, color:colors(id, name, hex_code), size:sizes(id, name, code, sort_order))
       `,
-        { count: "exact" }
+        { count: "exact" },
       )
-      .eq("active", true);
+      .eq("is_active", true);
 
     if (filters?.category) {
       query = query.eq("category_id", filters.category);
@@ -62,7 +92,7 @@ export class ProductService {
 
     if (filters?.search) {
       query = query.or(
-        `name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
+        `name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`,
       );
     }
 
@@ -80,15 +110,17 @@ export class ProductService {
 
     const { data, error, count } = await query.range(
       offset,
-      offset + limit - 1
+      offset + limit - 1,
     );
 
     if (error) {
       throw new Error(`Error fetching products: ${error.message}`);
     }
 
+    const normalizedData = data?.map(normalizeProduct) || [];
+
     return {
-      products: data || [],
+      products: normalizedData,
       total: count || 0,
       page,
       limit,
@@ -108,12 +140,30 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*),
-        product_variants(*, color:colors(*), size:sizes(*))
-      `
+        product_variants(id, product_id, size_id, color_id, stock_quantity, sku, color:colors(id, name, hex_code), size:sizes(id, name, code, sort_order))
+      `,
       )
-      .eq("active", true);
+      .eq("is_active", true);
 
     if (filters?.category) {
       query = query.eq("category_id", filters.category);
@@ -138,7 +188,7 @@ export class ProductService {
     if (filters?.offset) {
       query = query.range(
         filters.offset,
-        filters.offset + (filters.limit || 10) - 1
+        filters.offset + (filters.limit || 10) - 1,
       );
     }
 
@@ -150,7 +200,7 @@ export class ProductService {
       throw new Error(`Error fetching products: ${error.message}`);
     }
 
-    return data;
+    return data?.map(normalizeProduct) || [];
   }
 
   static async getProductById(id: string) {
@@ -158,13 +208,31 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*),
-        product_variants(*, color:colors(*), size:sizes(*))
-      `
+        product_variants(id, product_id, size_id, color_id, stock_quantity, sku, color:colors(id, name, hex_code), size:sizes(id, name, code, sort_order))
+      `,
       )
       .eq("id", id)
-      .eq("active", true)
+      .eq("is_active", true)
       .single();
 
     if (error) {
@@ -174,7 +242,7 @@ export class ProductService {
       throw new Error(`Error fetching product: ${error.message}`);
     }
 
-    return data;
+    return normalizeProduct(data);
   }
 
   static async getProductBySlug(slug: string) {
@@ -182,13 +250,31 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*),
-        product_variants(*, color:colors(*), size:sizes(*))
-      `
+        product_variants(id, product_id, size_id, color_id, stock_quantity, sku, color:colors(id, name, hex_code), size:sizes(id, name, code, sort_order))
+      `,
       )
-      .eq("sku", slug) // Asumiendo que el slug está en el SKU
-      .eq("active", true)
+      .eq("sku", slug)
+      .eq("is_active", true)
       .single();
 
     if (error) {
@@ -198,11 +284,11 @@ export class ProductService {
       throw new Error(`Error fetching product: ${error.message}`);
     }
 
-    return data;
+    return normalizeProduct(data);
   }
 
   static async createProduct(
-    productData: Database["public"]["Tables"]["products"]["Insert"]
+    productData: Database["public"]["Tables"]["products"]["Insert"],
   ) {
     const { data, error } = await supabaseAdmin
       .from("products")
@@ -219,7 +305,7 @@ export class ProductService {
 
   static async updateProduct(
     id: string,
-    updates: Database["public"]["Tables"]["products"]["Update"]
+    updates: Database["public"]["Tables"]["products"]["Update"],
   ) {
     const { data, error } = await supabaseAdmin
       .from("products")
@@ -238,7 +324,7 @@ export class ProductService {
   static async deleteProduct(id: string) {
     const { error } = await supabaseAdmin
       .from("products")
-      .update({ active: false })
+      .update({ is_active: false })
       .eq("id", id);
 
     if (error) {
@@ -253,7 +339,6 @@ export class ProductService {
   }
 
   static async getRelatedProducts(productId: string, limit = 4) {
-    // Obtener el producto actual para conocer su categoría
     const currentProduct = await this.getProductById(productId);
     if (!currentProduct) {
       return [];
@@ -263,12 +348,30 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*)
-      `
+      `,
       )
-      .eq("active", true)
-      .eq("category_id", currentProduct.category_id)
+      .eq("is_active", true)
+      .eq("category_id", (currentProduct as any).category_id)
       .neq("id", productId)
       .limit(limit);
 
@@ -276,20 +379,20 @@ export class ProductService {
       throw new Error(`Error fetching related products: ${error.message}`);
     }
 
-    return data || [];
+    return data?.map(normalizeProduct) || [];
   }
 
   static async updateStock(
     id: string,
     quantity: number,
-    operation: "add" | "subtract" | "set"
+    operation: "add" | "subtract" | "set",
   ) {
     const product = await this.getProductById(id);
     if (!product) {
       return null;
     }
 
-    let newStock = product.stock_quantity;
+    let newStock = (product as any).stock;
 
     switch (operation) {
       case "add":
@@ -311,11 +414,29 @@ export class ProductService {
       .from("products")
       .select(
         `
-        *,
+        id,
+        name,
+        description,
+        price,
+        sale_price,
+        sku,
+        stock_quantity,
+        category_id,
+        brand,
+        images,
+        sizes,
+        colors,
+        tags,
+        is_active,
+        is_featured,
+        weight,
+        dimensions,
+        created_at,
+        updated_at,
         categories(*)
-      `
+      `,
       )
-      .eq("active", true)
+      .eq("is_active", true)
       .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
       .limit(limit);
 
@@ -323,7 +444,7 @@ export class ProductService {
       throw new Error(`Error searching products: ${error.message}`);
     }
 
-    return data;
+    return data?.map(normalizeProduct) || [];
   }
 }
 

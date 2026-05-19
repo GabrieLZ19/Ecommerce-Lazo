@@ -17,7 +17,19 @@ router.post("/sync-profile", UserController.syncProfile);
 router.get("/profile", requireAuth, UserController.getProfile);
 router.put("/profile", requireAuth, UserController.updateProfile);
 router.delete("/account", requireAuth, UserController.deleteAccount);
-router.patch("/password", requireAuth, UserController.updatePassword);
+// Agregar esta ruta (si no existe)
+router.post(
+  "/send-password-change-confirmation",
+  requireAuth,
+  UserController.sendPasswordChangeConfirmation,
+);
+// Reenviar email de confirmación
+router.post(
+  "/resend-password-change-confirmation",
+  requireAuth,
+  UserController.resendPasswordChangeConfirmation,
+);
+router.post("/confirm-password-change", UserController.confirmPasswordChange);
 
 // Rutas de administrador
 router.get("/", requireAuth, requireAdmin, UserController.getUsers);

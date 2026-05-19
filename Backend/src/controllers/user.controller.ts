@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/user.service";
+import { supabase } from "../config/supabase";
 
 export class UserController {
   /**
@@ -260,39 +261,282 @@ export class UserController {
   }
 
   /**
-   * Actualizar contraseña
+   * Enviar email de confirmación para cambio de contraseña
    */
-  static async updatePassword(req: Request, res: Response): Promise<void> {
+  static async sendPasswordChangeConfirmation(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
     try {
-      const { newPassword } = req.body;
+      const { email, currentPassword, newPassword } = req.body;
+      const userId = req.user?.id;
 
-      if (!newPassword) {
+      if (!email || !currentPassword || !newPassword || !userId) {
         res.status(400).json({
           success: false,
-          message: "Nueva contraseña es requerida",
+          message:
+            "Email, contraseña actual, contraseña nueva y usuario requeridos",
         });
         return;
       }
 
-      if (newPassword.length < 6) {
-        res.status(400).json({
+      // VALIDACIÓN CRÍTICA: Verificar que la contraseña actual es correcta
+      try {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password: currentPassword,
+        });
+
+        if (signInError) {
+          res.status(401).json({
+            success: false,
+            message: "La contraseña actual es incorrecta",
+          });
+          return;
+        }
+      } catch (error: any) {
+        res.status(401).json({
           success: false,
-          message: "La contraseña debe tener al menos 6 caracteres",
+          message: "No se pudo validar tu contraseña. Intenta nuevamente.",
         });
         return;
       }
 
-      await UserService.updatePassword(newPassword);
+      // Generar token de confirmación
+      const confirmationToken = require("crypto")
+        .randomBytes(32)
+        .toString("hex");
+      const tokenExpiry = new Date(Date.now() + 1000 * 60 * 60); // 1 hora
+
+      // Guardar token en metadata de usuario (temporal)
+      const { error: updateError } = await supabase.auth.admin.updateUserById(
+        userId,
+        {
+          user_metadata: {
+            password_change_token: confirmationToken,
+            password_change_expiry: tokenExpiry.toISOString(),
+            password_change_new: newPassword,
+          },
+        },
+      );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Construir link de confirmación
+      const confirmationLink = `${process.env.FRONTEND_URL}/confirm-password-change?token=${confirmationToken}&userId=${userId}`;
+
+      // Enviar email con servicio de emails
+      const { EmailService } = await import("../services/email.service");
+      const emailSent = await EmailService.sendPasswordChangeConfirmation(
+        email,
+        confirmationLink,
+        req.user?.name?.split(" ")[0] || "Usuario",
+      );
+
+      if (!emailSent) {
+        console.warn("Email sending failed, but continuing");
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Email de confirmación enviado. Por favor revisa tu bandeja de entrada.",
+      });
+    } catch (error) {
+      console.error("Error sending password change confirmation:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error al enviar email de confirmación",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  /**
+   * Reenviar email de confirmación para cambio de contraseña
+   */
+  static async resendPasswordChangeConfirmation(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    try {
+      const { email } = req.body;
+      const userId = req.user?.id;
+
+      if (!email || !userId) {
+        res.status(400).json({
+          success: false,
+          message: "Email y usuario requeridos",
+        });
+        return;
+      }
+
+      // Obtener el token y contraseña nuevos guardados en metadata
+      const {
+        data: { user: authUser },
+        error: userError,
+      } = await supabase.auth.admin.getUserById(userId);
+
+      if (userError || !authUser) {
+        throw userError;
+      }
+
+      const passwordChangeToken = authUser.user_metadata?.password_change_token;
+      const newPassword = authUser.user_metadata?.password_change_new;
+
+      if (!passwordChangeToken || !newPassword) {
+        res.status(400).json({
+          success: false,
+          message:
+            "No hay solicitud de cambio de contraseña pendiente. Comienza de nuevo.",
+        });
+        return;
+      }
+
+      // Construir link de confirmación
+      const confirmationLink = `${process.env.FRONTEND_URL}/confirm-password-change?token=${passwordChangeToken}&userId=${userId}`;
+
+      // Reenviar email con servicio de emails
+      const { EmailService } = await import("../services/email.service");
+      const emailSent = await EmailService.sendPasswordChangeConfirmation(
+        email,
+        confirmationLink,
+        req.user?.name?.split(" ")[0] || "Usuario",
+      );
+
+      if (!emailSent) {
+        console.warn("Email sending failed, but continuing");
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Email de confirmación reenviado. Por favor revisa tu bandeja de entrada.",
+      });
+    } catch (error) {
+      console.error("Error resending password change confirmation:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error al reenviar email de confirmación",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  /**
+   * Confirmar cambio de contraseña (desde el link del email)
+   */
+  static async confirmPasswordChange(
+    req: Request,
+    res: Response,
+  ): Promise<void> {
+    try {
+      const { token, userId } = req.body;
+
+      if (!token || !userId) {
+        res.status(400).json({
+          success: false,
+          message: "Token y userId son requeridos",
+        });
+        return;
+      }
+
+      // Obtener datos del usuario
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.admin.getUserById(userId);
+
+      if (userError || !user) {
+        res.status(404).json({
+          success: false,
+          message: "Usuario no encontrado",
+        });
+        return;
+      }
+
+      const userData = user.user_metadata;
+      const storedToken = userData?.password_change_token;
+      const expiry = userData?.password_change_expiry;
+      const newPassword = userData?.password_change_new;
+
+      // Validar token
+      if (storedToken !== token) {
+        res.status(401).json({
+          success: false,
+          message: "Link de confirmación inválido",
+        });
+        return;
+      }
+
+      // Validar expiración
+      if (new Date() > new Date(expiry)) {
+        res.status(401).json({
+          success: false,
+          message: "El link de confirmación ha expirado",
+        });
+        return;
+      }
+
+      // Actualizar contraseña
+      const { error: updateError } = await supabase.auth.admin.updateUserById(
+        userId,
+        {
+          password: newPassword,
+          user_metadata: {
+            ...userData,
+            password_change_token: null,
+            password_change_expiry: null,
+            password_change_new: null,
+          },
+        },
+      );
+
+      // Verificar resultado de la actualización antes de continuar
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Revocar refresh tokens via Admin REST API (require SERVICE_ROLE_KEY)
+      try {
+        const adminUrl = `${process.env.SUPABASE_URL}/admin/v1/users/${userId}/revoke-refresh-tokens`;
+        const resp = await fetch(adminUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+          },
+        });
+
+        if (!resp.ok) {
+          console.warn(
+            "Servidor: revocar-refresh-tokens falló:",
+            await resp.text(),
+          );
+        } else {
+          console.log(
+            "Servidor: revocación de refresh tokens solicitada correctamente",
+          );
+        }
+      } catch (err) {
+        console.warn(
+          "Servidor: error al intentar revocar refresh tokens:",
+          err,
+        );
+      }
 
       res.json({
         success: true,
         message: "Contraseña actualizada exitosamente",
       });
-    } catch (error) {
-      console.error("Error updating password:", error);
+    } catch (error: any) {
+      console.error("Error confirming password change:", error);
       res.status(500).json({
         success: false,
-        message: "Error al actualizar contraseña",
+        message: "Error al confirmar el cambio de contraseña",
         error: error instanceof Error ? error.message : "Unknown error",
       });
     }
@@ -324,13 +568,11 @@ export class UserController {
       res.json({ success: true, data: profile });
     } catch (error) {
       console.error("Error syncing profile:", error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Error syncing profile",
-          error: error instanceof Error ? error.message : String(error),
-        });
+      res.status(500).json({
+        success: false,
+        message: "Error syncing profile",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -343,7 +585,7 @@ export class UserController {
 
       const result = await UserService.getUsers(
         parseInt(page as string),
-        parseInt(limit as string)
+        parseInt(limit as string),
       );
 
       res.json({

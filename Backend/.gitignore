@@ -155,3 +155,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+
+.agents/
