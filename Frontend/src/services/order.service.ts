@@ -7,6 +7,7 @@ export interface Order {
   status: string;
   payment_status: string;
   payment_method: string;
+  shipping_method: "standard" | "express" | "overnight";
   subtotal: number;
   shipping_cost: number;
   tax: number;
@@ -115,7 +116,7 @@ export class OrderService {
    */
   static async createOrder(
     userId: string,
-    orderData: CreateOrderRequest
+    orderData: CreateOrderRequest,
   ): Promise<Order> {
     // Obtener token JWT de Supabase
     const { supabase } = await import("@/lib/supabase");
@@ -169,7 +170,7 @@ export class OrderService {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           credentials: "include",
-        }
+        },
       );
 
       if (!response.ok) {
@@ -187,7 +188,7 @@ export class OrderService {
             // eslint-disable-next-line no-console
             console.log(
               `[OrderService] order ${o.id} shipping_address:`,
-              o.shipping_address || o.shipping_address_id || null
+              o.shipping_address || o.shipping_address_id || null,
             );
           });
         } else {
@@ -211,7 +212,7 @@ export class OrderService {
    */
   static async getOrdersByUser(
     userId: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<Order[]> {
     try {
       // Obtener token JWT de Supabase
@@ -228,7 +229,7 @@ export class OrderService {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           credentials: "include",
-        }
+        },
       );
 
       if (!response.ok) {
@@ -251,7 +252,7 @@ export class OrderService {
   static async updateOrderStatus(
     orderId: string,
     status: string,
-    paymentStatus?: string
+    paymentStatus?: string,
   ): Promise<Order> {
     try {
       if (!supabase) {
@@ -284,7 +285,7 @@ export class OrderService {
    */
   static async updateTrackingNumber(
     orderId: string,
-    trackingNumber: string
+    trackingNumber: string,
   ): Promise<Order> {
     try {
       if (!supabase) {
@@ -317,6 +318,7 @@ export class OrderService {
         status: "shipped",
         payment_status: "approved",
         payment_method: "mercadopago",
+        shipping_method: "standard",
         subtotal: 75000,
         shipping_cost: 0,
         tax: 14500,
@@ -324,10 +326,10 @@ export class OrderService {
         total: 89500,
         tracking_number: "TR123456789",
         estimated_delivery: new Date(
-          Date.now() + 2 * 24 * 60 * 60 * 1000
+          Date.now() + 2 * 24 * 60 * 60 * 1000,
         ).toISOString(),
         created_at: new Date(
-          Date.now() - 5 * 24 * 60 * 60 * 1000
+          Date.now() - 5 * 24 * 60 * 60 * 1000,
         ).toISOString(),
         updated_at: new Date().toISOString(),
         items: [
@@ -387,13 +389,14 @@ export class OrderService {
         status: "pending",
         payment_status: "pending",
         payment_method: "bank_transfer",
+        shipping_method: "express",
         subtotal: 45000,
         shipping_cost: 5000,
         tax: 9450,
         payment_fee: -4500, // 10% descuento
         total: 54950,
         created_at: new Date(
-          Date.now() - 1 * 24 * 60 * 60 * 1000
+          Date.now() - 1 * 24 * 60 * 60 * 1000,
         ).toISOString(),
         updated_at: new Date().toISOString(),
         items: [

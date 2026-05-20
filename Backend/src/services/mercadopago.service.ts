@@ -53,7 +53,7 @@ export class MercadoPagoService {
     items: CheckoutItem[],
     payer: Payer,
     orderId: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ) {
     try {
       console.log("[MP] FRONTEND_URL:", config.frontend.url);
@@ -62,7 +62,7 @@ export class MercadoPagoService {
         failure: `${config.frontend.url}/checkout/failure`,
         pending: `${config.frontend.url}/checkout/pending`,
       });
-      const isProduction = `${config.frontend.url}`.startsWith("https://");
+
       const body: any = {
         items: items.map((item) => ({
           ...item,
@@ -70,13 +70,13 @@ export class MercadoPagoService {
         })),
         payer,
         external_reference: orderId,
-        // notification_url should point to backend webhook endpoint
         notification_url: `${config.apiUrl}/api/orders/webhook/mercadopago`,
         back_urls: {
           success: `${config.frontend.url}/checkout/success`,
           failure: `${config.frontend.url}/checkout/failure`,
           pending: `${config.frontend.url}/checkout/pending`,
         },
+
         metadata: {
           order_id: orderId,
           ...metadata,
@@ -84,68 +84,23 @@ export class MercadoPagoService {
         statement_descriptor: "LAZO STORE",
         expires: true,
         expiration_date_from: new Date().toISOString(),
-        expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutos
+        expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       };
-      if (isProduction) {
-        body.auto_return = "approved";
-      }
 
       const response = await preference.create({ body });
 
-      // Crear un registro en la tabla payments para trazabilidad
-      try {
-        const amount = (items || []).reduce(
-          (sum: number, it) => sum + (it.unit_price || 0) * (it.quantity || 1),
-          0
-        );
-
-        const { data: paymentData, error: paymentError } = await supabase
-          .from("payments")
-          .insert({
-            order_id: orderId,
-            provider: "mercadopago",
-            provider_preference_id: response.id,
-            amount: amount || 0,
-            currency: "ARS",
-            status: "pending",
-            raw_response: response,
-          })
-          .select()
-          .single();
-
-        if (paymentError) {
-          console.warn("No se pudo insertar payment record:", paymentError);
-        }
-
-        return {
-          id: response.id,
-          init_point: response.init_point,
-          sandbox_init_point: response.sandbox_init_point,
-          client_id: response.client_id,
-          collector_id: response.collector_id,
-          operation_type: response.operation_type,
-          items: response.items,
-          payer: response.payer,
-          back_urls: response.back_urls,
-          external_reference: response.external_reference,
-          payment_id: paymentData?.id || null,
-        };
-      } catch (dbErr) {
-        console.warn("Error creating payment record:", dbErr);
-        return {
-          id: response.id,
-          init_point: response.init_point,
-          sandbox_init_point: response.sandbox_init_point,
-          client_id: response.client_id,
-          collector_id: response.collector_id,
-          operation_type: response.operation_type,
-          items: response.items,
-          payer: response.payer,
-          back_urls: response.back_urls,
-          external_reference: response.external_reference,
-          payment_id: null,
-        };
-      }
+      return {
+        id: response.id,
+        init_point: response.init_point,
+        sandbox_init_point: response.sandbox_init_point,
+        client_id: response.client_id,
+        collector_id: response.collector_id,
+        operation_type: response.operation_type,
+        items: response.items,
+        payer: response.payer,
+        back_urls: response.back_urls,
+        external_reference: response.external_reference,
+      };
     } catch (error) {
       console.error("Error creating MercadoPago preference:", error);
       throw new Error(`Failed to create payment preference: ${error}`);
@@ -215,6 +170,63 @@ export class MercadoPagoService {
     } catch (error) {
       console.error("Error processing webhook:", error);
       throw new Error(`Failed to process webhook: ${error}`);
+    }
+  }
+
+  static validateWebhookSignature(
+    dataId: string,
+    signature: string,
+    requestId: string,
+  ): boolean {
+    try {
+      const webhookSecret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        console.warn("MERCADOPAGO_WEBHOOK_SECRET not configured");
+        return true; // En desarrollo sin secret, permitir
+      }
+
+      const crypto = require("crypto");
+      const sha256 = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(`id=${dataId};request-id=${requestId}`)
+        .digest("hex");
+
+      return sha256 === signature;
+    } catch (error) {
+      console.error("Error validating webhook signature:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Manejar webhook completo con validación y actualización de orden
+   */
+  static async handleWebhook(webhookData: any) {
+    try {
+      const { id, type, data } = webhookData;
+
+      console.log(`[MP Webhook] Procesando ${type} con ID: ${data.id}`);
+
+      if (type === "payment") {
+        const paymentInfo = await this.getPaymentInfo(data.id);
+
+        return {
+          shouldUpdateOrder: true,
+          payment: {
+            id: paymentInfo.id,
+            status: paymentInfo.status,
+            external_reference: paymentInfo.external_reference,
+          },
+        };
+      }
+
+      return {
+        shouldUpdateOrder: false,
+        payment: null,
+      };
+    } catch (error) {
+      console.error("[MP Webhook] Error:", error);
+      throw error;
     }
   }
 

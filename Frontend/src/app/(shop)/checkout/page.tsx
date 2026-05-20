@@ -270,11 +270,11 @@ export default function CheckoutPage() {
 
       if (selectedPaymentMethod === "bank_transfer") {
         showSuccess(
-          "Orden creada exitosamente. Te enviaremos los datos bancarios por email."
+          "Orden creada exitosamente. Te enviaremos los datos bancarios por email.",
         );
         clearCart();
         router.push(
-          `/order-confirmation?order_id=${orderId}&payment_status=pending`
+          `/order-confirmation?order_id=${orderId}&payment_status=pending`,
         );
         return;
       }
@@ -285,14 +285,15 @@ export default function CheckoutPage() {
         const initPoint = await OrderService.startMercadoPagoPayment(orderId);
         clearCart();
         window.location.href = initPoint;
+        localStorage.setItem("last_order_id", orderId);
       } catch (mpError) {
         console.error("Error with MercadoPago:", mpError);
         showError(
-          "Error al procesar el pago. Se creó la orden como pendiente."
+          "Error al procesar el pago. Se creó la orden como pendiente.",
         );
         clearCart();
         router.push(
-          `/order-confirmation?order_id=${orderId}&payment_status=pending`
+          `/order-confirmation?order_id=${orderId}&payment_status=pending`,
         );
       }
     } catch (error) {

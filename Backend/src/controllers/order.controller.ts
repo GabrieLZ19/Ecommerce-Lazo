@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { OrderService } from "../services/order.service";
 import { MercadoPagoService } from "../services/mercadopago.service";
 import { config } from "../config/environment";
-import { Order } from "../types/database.types";
+import { supabase } from "../config/supabase";
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -19,7 +19,7 @@ export class OrderController {
    */
   static async createOrder(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const userId = req.user?.id;
@@ -59,7 +59,7 @@ export class OrderController {
    */
   static async getUserOrders(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const userId = req.user?.id;
@@ -77,7 +77,7 @@ export class OrderController {
       const result = await OrderService.getUserOrders(
         userId,
         parseInt(page as string),
-        parseInt(limit as string)
+        parseInt(limit as string),
       );
 
       res.json({
@@ -99,7 +99,7 @@ export class OrderController {
    */
   static async getOrderById(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const userId = req.user?.id;
@@ -160,7 +160,7 @@ export class OrderController {
    */
   static async updateOrderStatus(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const { id } = req.params;
@@ -204,7 +204,7 @@ export class OrderController {
    */
   static async cancelOrder(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const userId = req.user?.id;
@@ -248,7 +248,7 @@ export class OrderController {
 
       const order = await OrderService.cancelOrder(
         id,
-        reason || "Cancelación solicitada por el usuario"
+        reason || "Cancelación solicitada por el usuario",
       );
 
       res.json({
@@ -276,7 +276,7 @@ export class OrderController {
       const result = await OrderService.getAllOrders(
         parseInt(page as string),
         parseInt(limit as string),
-        status as any
+        status as any,
       );
 
       res.json({
@@ -319,7 +319,7 @@ export class OrderController {
    */
   static async createPaymentPreference(
     req: AuthenticatedRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       const userId = req.user?.id;
@@ -361,16 +361,17 @@ export class OrderController {
       }
 
       // Preparar items para MercadoPago
-      const items = order.items.map((item) => ({
+      const items = order.items.map((item: any) => ({
         id: item.product_id,
-        title: item.products?.name || "Producto",
+        title: item.products?.name || item.product_name || "Producto",
         quantity: item.quantity,
-        unit_price: item.price,
+        unit_price: item.unit_price,
         currency_id: "ARS",
         picture_url: item.products?.images?.[0] || "",
-        description: `${item.products?.name || "Producto"} - ${
-          item.size || ""
-        } ${item.color || ""}`.trim(),
+        description:
+          `${item.products?.name || item.product_name || "Producto"} - ${
+            item.size_name || ""
+          } ${item.color_name || ""}`.trim(),
       }));
 
       // Preparar información del comprador
@@ -402,23 +403,8 @@ export class OrderController {
       const preference = await MercadoPagoService.createPreference(
         items,
         payer,
-        order.id
+        order.id,
       );
-
-      // Si el servicio devolvió payment_id, actualizar current_payment_id en la orden
-      if (preference.payment_id) {
-        try {
-          await OrderService.updatePaymentReference(
-            order.id,
-            preference.payment_id
-          );
-        } catch (err) {
-          console.warn(
-            "No se pudo actualizar current_payment_id en la orden:",
-            err
-          );
-        }
-      }
 
       // Si estamos en desarrollo/no producción, usar sandbox_init_point si está disponible
       const init_point =
@@ -431,7 +417,6 @@ export class OrderController {
         data: {
           preference_id: preference.id,
           init_point,
-          payment_id: preference.payment_id || null,
         },
       });
     } catch (error) {
@@ -447,46 +432,120 @@ export class OrderController {
   /**
    * Webhook de MercadoPago
    */
+
   static async handleWebhook(req: Request, res: Response): Promise<void> {
     try {
-      // TODO: Implementar handleWebhook en MercadoPagoService
-      // const result = await MercadoPagoService.handleWebhook(req.body);
-      const result: {
-        shouldUpdateOrder: boolean;
-        payment: {
-          external_reference?: string;
-          status?: string;
-          id?: number;
-        } | null;
-      } = { shouldUpdateOrder: false, payment: null };
+      console.log("[Webhook MP] Headers:", req.headers);
+      console.log("[Webhook MP] Body:", req.body);
+
+      // Obtener headers para validación
+      const signature = req.headers["x-signature"] as string;
+      const requestId = req.headers["x-request-id"] as string;
+
+      // Validar webhook (opcional, pero recomendado)
+      if (signature && requestId && req.body?.data?.id) {
+        const isValid = MercadoPagoService.validateWebhookSignature(
+          req.body.data.id,
+          signature,
+          requestId,
+        );
+        if (!isValid) {
+          console.warn("[Webhook MP] Firma inválida");
+          res.status(401).json({ success: false, error: "Invalid signature" });
+          return;
+        }
+      }
+
+      // Procesar webhook
+      const result = await MercadoPagoService.handleWebhook(req.body);
 
       if (result.shouldUpdateOrder && result.payment) {
         const orderId = result.payment.external_reference;
+        const paymentStatus = result.payment.status;
 
-        if (orderId) {
-          let paymentStatus: "pending" | "paid" | "failed" | "refunded" =
-            "pending";
+        if (!orderId) {
+          res.status(400).json({
+            success: false,
+            message: "external_reference no encontrada",
+          });
+          return;
+        }
 
-          switch (result.payment.status) {
-            case "approved":
-              paymentStatus = "paid";
-              break;
-            case "rejected":
-            case "cancelled":
-              paymentStatus = "failed";
-              break;
-            case "refunded":
-              paymentStatus = "refunded";
-              break;
-            default:
-              paymentStatus = "pending";
+        // Mapear estado de MP a estado de orden
+        let orderPaymentStatus: "pending" | "paid" | "failed" | "refunded" =
+          "pending";
+        let orderStatus: "pending" | "confirmed" | "cancelled" = "pending";
+
+        switch (paymentStatus) {
+          case "approved":
+            orderPaymentStatus = "paid";
+            orderStatus = "confirmed";
+            break;
+          case "rejected":
+          case "cancelled":
+            orderPaymentStatus = "failed";
+            orderStatus = "cancelled";
+            break;
+          case "refunded":
+            orderPaymentStatus = "refunded";
+            orderStatus = "cancelled";
+            break;
+          default:
+            orderPaymentStatus = "pending";
+            orderStatus = "pending";
+        }
+
+        console.log(
+          `[Webhook MP] Actualizando orden ${orderId}: payment_status=${orderPaymentStatus}, status=${orderStatus}`,
+        );
+
+        // Actualizar estado de pago
+        await OrderService.updatePaymentStatus(
+          orderId,
+          orderPaymentStatus,
+          result.payment.id?.toString(),
+        );
+
+        // Si pago fue aprobado, decrementar stock
+        if (orderStatus === "confirmed") {
+          try {
+            const order = await OrderService.getOrderById(orderId);
+
+            if (order && order.items) {
+              for (const item of order.items) {
+                if (item.product_variant_id) {
+                  // Llamar RPC para decrementar stock
+                  const { data, error: updateError } = await supabase.rpc(
+                    "decrement_stock",
+                    {
+                      variant_id: item.product_variant_id,
+                      quantity: item.quantity,
+                    },
+                  );
+
+                  if (updateError) {
+                    console.error(
+                      `[Webhook MP] Error decrementando stock para variante ${item.product_variant_id}:`,
+                      updateError,
+                    );
+                  } else {
+                    console.log(
+                      `[Webhook MP] ✅ Stock decrementado: ${item.product_name} -${item.quantity}`,
+                    );
+                  }
+                } else {
+                  console.warn(
+                    `[Webhook MP] ⚠️ Variante no encontrada para: ${item.product_name}`,
+                  );
+                }
+              }
+            }
+          } catch (stockError) {
+            console.error(
+              "[Webhook MP] ❌ Error actualizando stock:",
+              stockError,
+            );
           }
-
-          await OrderService.updatePaymentStatus(
-            orderId,
-            paymentStatus,
-            result.payment.id?.toString()
-          );
         }
       }
 

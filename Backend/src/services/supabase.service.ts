@@ -17,6 +17,7 @@ export const supabaseAdmin = createClient<Database>(
 );
 
 // Función helper para normalizar productos
+
 const normalizeProduct = (product: any) => ({
   ...product,
   stock: product.stock_quantity,
@@ -25,6 +26,12 @@ const normalizeProduct = (product: any) => ({
   product_variants: product.product_variants?.map((variant: any) => ({
     ...variant,
     stock: variant.stock_quantity,
+    color: variant.color
+      ? {
+          ...variant.color,
+          hex: variant.color.hex_code,
+        }
+      : null,
   })),
 });
 
